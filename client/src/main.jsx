@@ -1,18 +1,22 @@
+/**
+ * @file        main.jsx
+ * @description 애플리케이션의 최상위 진입점 파일입니다.
+ * (React DOM의 루트 생성 및 전역 브라우저 라우터 설정을 담당합니다.)
+ */
+
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
-import { ThemeProvider, CssBaseline } from '@mui/material';
 import App from './App.jsx';
-import theme from './theme/theme'; 
 
+/** [렌더링 영역] */
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      <ThemeProvider theme={theme}>
-        {/* CssBaseline은 MUI의 기본 스타일 초기화(reset) 모듈 */}
-        <CssBaseline /> 
-        <App />
-      </ThemeProvider>
+      {/* 주의: 다크모드 동적 테마 적용을 위해 
+        ThemeProvider와 CssBaseline은 App.jsx 내부로 이동되었습니다. 
+      */}
+      <App />
     </BrowserRouter>
   </React.StrictMode>
 );

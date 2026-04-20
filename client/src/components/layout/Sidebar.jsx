@@ -1,6 +1,7 @@
 /**
  * @file        Sidebar.jsx
  * @description 애플리케이션 좌측 내비게이션 사이드바 컴포넌트 및 시리얼 바코드 스캐너 연결 관리
+ * (어두운 배경에 맞춰 글자와 UI가 명확하게 보이도록 대비(Contrast)를 고정했습니다.)
  */
 
 import React from 'react';
@@ -33,32 +34,30 @@ import {
 import { useSerialScanner } from '../../hooks/useSerialScanner';
 import useAppStore from '../../store/useAppStore';
 
-/** [상수] */
-
-/** 사이드바 열림 상태일 때의 고정 가로 너비 (px) */
+/** [상수] 사이드바 열림 상태일 때의 고정 가로 너비 (px) */
 const drawerWidth = 260;
 
 /**
  * [사이드바 컴포넌트]
  * @param {boolean} open - 사이드바 확장/축소 상태
  */
-const Sidebar = ({ open }) => {
-  /** [라우팅 관리] */
+const Sidebar = ({ 
+  open 
+}) => {
+  /** [영역 분리: 라우팅 관리] */
   const navigate = useNavigate();
   const location = useLocation();
 
-  /** [상태 관리] */
-
-  // Zustand 스토어에서 스캐너 데이터 및 연결 상태 추출
+  /** [영역 분리: 상태 관리] 
+   * Zustand 스토어에서 스캐너 데이터 및 연결 상태 추출 
+   */
   const {
     setLastScan,
     isScannerConnected,
     setScannerConnected
   } = useAppStore();
 
-  /** [커스텀 훅] */
-
-  /**
+  /** [영역 분리: 커스텀 훅] 
    * 시리얼 스캐너 포트 연결 및 통신 제어
    * 바코드 스캔 시 전역 상태에 값을 업데이트하고 연결 상태를 실시간으로 반영
    */
@@ -70,7 +69,7 @@ const Sidebar = ({ open }) => {
     (status) => setScannerConnected(status)
   );
 
-  /** [이벤트 핸들러] */
+  /** [영역 분리: 이벤트 핸들러] */
 
   /**
    * 스캐너 장치 연결/해제 토글 핸들러
@@ -86,7 +85,7 @@ const Sidebar = ({ open }) => {
     }
   };
 
-  /** [데이터: 메뉴 구성] */
+  /** [영역 분리: 데이터 - 메뉴 구성] */
   const menus = [
     {
       title: '대시보드',
@@ -137,8 +136,9 @@ const Sidebar = ({ open }) => {
         '& .MuiDrawer-paper': {
           width: drawerWidth,
           boxSizing: 'border-box',
-          backgroundColor: '#233044',
-          color: '#eeeeee',
+          // 사이드바는 테마와 무관하게 항상 어두운 배경이므로 고정 색상 적용
+          backgroundColor: (theme) => theme.palette?.layout?.sidebar?.background || '#233044',
+          color: (theme) => theme.palette?.layout?.sidebar?.font || '#eeeeee',
           display: 'flex',
           flexDirection: 'column',
           overflowX: 'hidden',
@@ -157,51 +157,56 @@ const Sidebar = ({ open }) => {
         }}
       >
         <List>
-          {menus.map((menu, index) => (
-            <ListItem
-              key={index}
-              disablePadding
-            >
-              <ListItemButton
-                selected={location.pathname === menu.path}
-                onClick={() => navigate(menu.path)}
-                sx={{
-                  py: 1.2,
-                  '&.Mui-selected': {
-                    backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                    borderLeft: '4px solid #90caf9',
-                  },
-                  '&:hover': {
-                    backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                  }
-                }}
+          {menus.map((menu, index) => {
+            const isSelected = location.pathname === menu.path;
+            
+            return (
+              <ListItem
+                key={index}
+                disablePadding
               >
-                <ListItemIcon
+                <ListItemButton
+                  selected={isSelected}
+                  onClick={() => navigate(menu.path)}
                   sx={{
-                    color: 'inherit',
-                    minWidth: 40
+                    py: 1.2,
+                    '&.Mui-selected': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                      borderLeft: (theme) => `4px solid ${theme.palette.primary.main}`,
+                    },
+                    '&:hover': {
+                      backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                    }
                   }}
                 >
-                  {menu.icon}
-                </ListItemIcon>
+                  <ListItemIcon
+                    sx={{
+                      color: isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.6)', // 아이콘 색상 대비 확보
+                      minWidth: 40
+                    }}
+                  >
+                    {menu.icon}
+                  </ListItemIcon>
 
-                <ListItemText
-                  primary={menu.title}
-                  primaryTypographyProps={{
-                    fontSize: '0.9rem',
-                    fontWeight: location.pathname === menu.path ? 'bold' : 'normal'
-                  }}
-                />
-              </ListItemButton>
-            </ListItem>
-          ))}
+                  <ListItemText
+                    primary={menu.title}
+                    primaryTypographyProps={{
+                      fontSize: '0.9rem',
+                      fontWeight: isSelected ? 'bold' : 'normal',
+                      color: isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.85)' // 텍스트 색상 대비 확보
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            );
+          })}
         </List>
       </Box>
 
       {/* 하단 제어부 구분을 위한 Divider */}
       <Divider
         sx={{
-          backgroundColor: 'rgba(255,255,255,0.1)'
+          backgroundColor: 'rgba(255, 255, 255, 0.1)'
         }}
       />
 
@@ -209,13 +214,14 @@ const Sidebar = ({ open }) => {
       <Box
         sx={{
           p: 2,
-          backgroundColor: 'rgba(0,0,0,0.2)'
+          backgroundColor: 'rgba(0, 0, 0, 0.2)'
         }}
       >
         <Typography
           variant="caption"
           sx={{
-            color: '#aaa',
+            // ★ 핵심 해결: 테마에 묻혀 시꺼멓게 변하지 않도록 명시적 밝은 색상 지정
+            color: 'rgba(255, 255, 255, 0.6)', 
             display: 'block',
             mb: 1,
             fontWeight: 'bold',
@@ -237,12 +243,13 @@ const Sidebar = ({ open }) => {
           <Typography
             variant="body2"
             sx={{
-              color: '#fff',
+              color: '#ffffff', // ★ 명시적 흰색 적용
               fontSize: '0.85rem'
             }}
           >
             Serial Scanner
           </Typography>
+          
           <Chip
             size="small"
             label={isScannerConnected ? "CONNECTED" : "DISCONNECTED"}
@@ -250,7 +257,13 @@ const Sidebar = ({ open }) => {
             sx={{
               height: 20,
               fontSize: '0.6rem',
-              fontWeight: 'bold'
+              fontWeight: 'bold',
+              // ★ 핵심 해결: DISCONNECTED (default) 일 때 까맣게 묻히지 않도록 반투명 흰색 바탕 강제 적용
+              ...(!isScannerConnected && {
+                backgroundColor: 'rgba(255, 255, 255, 0.15)',
+                color: '#ffffff',
+                border: '1px solid rgba(255, 255, 255, 0.3)'
+              })
             }}
           />
         </Box>

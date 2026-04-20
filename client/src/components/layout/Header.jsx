@@ -1,6 +1,7 @@
 /**
  * @file        Header.jsx
  * @description 애플리케이션 상단 내비게이션 바(Header) 컴포넌트
+ * (전역 테마의 헤더 색상 설정을 따르며, 다크모드 토글 기능을 포함합니다.)
  */
 
 import React from 'react';
@@ -10,23 +11,33 @@ import {
   Typography, 
   IconButton, 
   Box, 
-  Button 
+  Button,
+  Tooltip
 } from '@mui/material';
 import MenuIcon from '@mui/icons-material/Menu';
 import AccountCircleIcon from '@mui/icons-material/AccountCircle';
+import Brightness4Icon from '@mui/icons-material/Brightness4';
+import Brightness7Icon from '@mui/icons-material/Brightness7';
 import { useNavigate } from 'react-router-dom';
 import apiClient from '../../utils/apiClient';
 import useAppStore from '../../store/useAppStore';
 
+/**
+ * [컴포넌트] Header
+ * @param {Function} onDrawerToggle - 모바일 환경 등에서 사이드바 개폐를 제어하는 함수
+ */
 const Header = ({ onDrawerToggle }) => {
-  /** [라우팅 관리] 페이지 이동 훅 */
+  /** [영역 분리: 라우팅 및 전역 상태 관리] */
   const navigate = useNavigate();
   
-  /** [전역 상태 관리] Zustand 스토어 참조 */
-  const setLogout = useAppStore((state) => state.setLogout);
-  const user = useAppStore((state) => state.user); 
+  const { 
+    user, 
+    setLogout, 
+    isDarkMode, 
+    toggleDarkMode 
+  } = useAppStore();
 
-  /** [이벤트 핸들러] */
+  /** [영역 분리: 이벤트 핸들러] */
 
   /**
    * 로그아웃 처리 함수
@@ -43,18 +54,21 @@ const Header = ({ onDrawerToggle }) => {
       setLogout();
       
       // 3. 로그인 페이지로 사용자 리다이렉트
-
       navigate('/login');
     }
   };
 
-  /** [렌더링 영역] */
+  /** [영역 분리: 렌더링 영역] */
   return (
     <AppBar 
       position="fixed" 
       sx={{ 
         zIndex: (theme) => theme.zIndex.drawer + 1, 
-        backgroundColor: '#1e40af' // 시스템 메인 컬러
+        // 시스템 메인 컬러 하드코딩 대신, theme.js에서 세분화한 헤더 색상 적용
+        backgroundColor: (theme) => theme.palette.layout.header.background,
+        color: (theme) => theme.palette.layout.header.font,
+        borderBottom: (theme) => `1px solid ${theme.palette.layout.header.border}`,
+        boxShadow: 'none'
       }}
     >
       <Toolbar>
@@ -65,7 +79,9 @@ const Header = ({ onDrawerToggle }) => {
           aria-label="open drawer"
           edge="start"
           onClick={onDrawerToggle}
-          sx={{ mr: 2 }}
+          sx={{ 
+            mr: 2 
+          }}
         >
           <MenuIcon />
         </IconButton>
@@ -84,7 +100,7 @@ const Header = ({ onDrawerToggle }) => {
           My Admin Framework
         </Typography>
         
-        {/* 우측: 사용자 정보 및 제어(로그아웃) 영역 */}
+        {/* 우측: 사용자 정보 및 제어 영역 */}
         <Box 
           sx={{ 
             display: 'flex', 
@@ -92,14 +108,32 @@ const Header = ({ onDrawerToggle }) => {
             gap: 1 
           }}
         >
+          {/* 다크모드 토글 버튼 추가 */}
+          <Tooltip 
+            title={isDarkMode ? "라이트 모드로 전환" : "다크 모드로 전환"} 
+            placement="bottom"
+          >
+            <IconButton 
+              color="inherit" 
+              onClick={toggleDarkMode}
+              sx={{ 
+                mr: 1 
+              }}
+            >
+              {isDarkMode ? <Brightness7Icon /> : <Brightness4Icon />}
+            </IconButton>
+          </Tooltip>
+
           <AccountCircleIcon />
           
           <Typography 
             variant="body2" 
-            sx={{ mr: 2 }}
+            sx={{ 
+              mr: 2 
+            }}
           >
             {/* 전역 상태에 저장된 로그인 유저 이름 확인 후 분기 처리 */}
-            {user && user.userName ? `${user.userName}님` : '관리자님'}
+            {user?.userName ? `${user.userName}님` : '관리자님'}
           </Typography>
           
           <Button 
