@@ -1,0 +1,27 @@
+USE REACT_BASE
+GO
+
+-- 사용자 테이블
+CREATE TABLE TB_USER (
+    UserId VARCHAR(50) PRIMARY KEY,
+    UserPwd VARCHAR(255) NOT NULL,
+    UserName NVARCHAR(50) NOT NULL,
+    Role VARCHAR(20) DEFAULT 'ADMIN',
+    IsActive CHAR(1) DEFAULT 'Y',
+    CreatedAt DATETIME DEFAULT GETDATE()
+);
+
+-- 채번 관리
+CREATE TABLE TB_COM_SEQ (
+    SeqType VARCHAR(20) PRIMARY KEY,
+    LastDate VARCHAR(8) NOT NULL,
+    LastSeq INT NOT NULL,
+    UpdDate DATETIME DEFAULT GETDATE()
+);
+
+-- 세션 관리 (Node.js 세션 스토어용)
+CREATE TABLE TB_SESSIONS (
+    sid VARCHAR(255) PRIMARY KEY,
+    session NVARCHAR(MAX) NOT NULL,
+    expires DATETIME NOT NULL
+);
