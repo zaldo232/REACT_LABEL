@@ -1,10 +1,15 @@
 /**
  * @file        BarcodeScanPage.jsx
  * @description 실시간 바코드 등록 및 자동 파싱 처리 페이지
- * (연결된 하드웨어 스캐너로부터 데이터를 받아와 양식의 구분자에 맞게 파싱하고, 대기 목록을 관리합니다. 한 화면에 꽉 차도록 레이아웃이 보정되었습니다.)
+ * (연결된 하드웨어 스캐너로부터 데이터를 받아와 양식의 구분자에 맞게 파싱하고, 대기 목록을 관리합니다.)
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { 
+  useState, 
+  useEffect, 
+  useRef, 
+  useMemo 
+} from 'react';
 import { 
   Box, 
   Button, 
@@ -24,7 +29,10 @@ import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
 import apiClient from '../../utils/apiClient';
 import useAppStore from '../../store/useAppStore';
 import DataTable from '../../components/common/DataTable';
-import { showAlert, showConfirm } from '../../utils/swal';
+import { 
+  showAlert, 
+  showConfirm 
+} from '../../utils/swal';
 
 /**
  * [컴포넌트] BarcodeScanPage
@@ -70,7 +78,9 @@ const BarcodeScanPage = () => {
    * (Zustand 스토어의 lastScan 객체가 업데이트될 때마다 실행)
    */
   useEffect(() => {
-    if (lastScan.barcode && lastScan.timestamp > lastProcessedTime.current) {
+    /** ★ 핵심 수정: 옵셔널 체이닝(?.)을 사용하여 lastScan이 undefined일 경우의 충돌 방지 */
+    if (lastScan?.barcode && lastScan?.timestamp > lastProcessedTime.current) {
+      
       // 1. 중복 실행 방지를 위해 최근 처리 시간 갱신
       lastProcessedTime.current = lastScan.timestamp;
 
@@ -91,10 +101,10 @@ const BarcodeScanPage = () => {
         }
       });
 
-      // 5. 파싱 결과를 UI(TextField 렌더링 용)에 즉시 반영
+      // 5. 파싱 결과를 UI에 반영
       setMetaData(updatedMeta);
 
-      // 6. 데이터 그리드(표)에 삽입할 신규 스캔 데이터 객체 생성
+      // 6. 데이터 그리드에 삽입할 신규 스캔 데이터 객체 생성
       const newEntry = {
         id: lastScan.timestamp,
         no: scannedList.length + 1,
@@ -122,7 +132,7 @@ const BarcodeScanPage = () => {
 
   /**
    * 라벨 양식 선택 변경 처리
-   * @description 양식의 DesignJson을 분석하여 가변 데이터 필드(data)와 구분자(meta)를 동적으로 추출합니다.
+   * @param {Object} e - Select 이벤트 객체
    */
   const handleTemplateChange = (e) => {
     const tId = e.target.value;
@@ -150,7 +160,7 @@ const BarcodeScanPage = () => {
   };
 
   /**
-   * 항목 데이터 수동 입력 처리 (실제로는 ReadOnly로 동작함)
+   * 항목 데이터 변경 핸들러 (ReadOnly 상태 보조)
    */
   const handleMetaChange = (label, value) => {
     setMetaData(prev => ({ 
@@ -162,9 +172,8 @@ const BarcodeScanPage = () => {
   /** [영역 분리: 비즈니스 로직] */
 
   /**
-   * 한국 시간(KST) 문자열 변환 함수
-   * @param {number} timestamp - 밀리초 단위의 타임스탬프
-   * @returns {string} 'YYYY-MM-DD HH:mm:ss' 형식의 KST 시간 문자열
+   * 한국 시간(KST) 문자열 변환
+   * @param {number} timestamp - 타임스탬프
    */
   const getKstString = (timestamp) => {
     const date = new Date(timestamp);
@@ -173,8 +182,7 @@ const BarcodeScanPage = () => {
   };
 
   /**
-   * 대기 중인 스캔 목록 서버 일괄 저장
-   * @description 확인 팝업 호출 후, 스캔 시점의 타임스탬프를 기준으로 데이터를 서버에 전송합니다.
+   * 대기 중인 스캔 목록 서버 저장
    */
   const handleSave = async () => {
     if (scannedList.length === 0) return;
@@ -186,13 +194,12 @@ const BarcodeScanPage = () => {
 
     if (isConfirmed) {
       try {
-        // 화면 표출을 위해 역순(최신순) 정렬된 배열을 다시 원래 시간순으로 돌려 Payload 생성
         const payload = scannedList.slice().reverse().map(item => {
           const { id, no, scannedAt, operator, templateId, barcode, ...restData } = item;
           
           return {
             barcode: barcode,
-            scannedAt: getKstString(item.id), // 서버 저장을 위한 정밀한 KST 보정 시간 적용
+            scannedAt: getKstString(item.id),
             ...restData 
           };
         });
@@ -213,9 +220,7 @@ const BarcodeScanPage = () => {
     }
   };
 
-  /** * 데이터 그리드 컬럼 구성 (Memoization) 
-   * @description 선택된 양식의 가변 데이터 수에 따라 표의 컬럼이 동적으로 확장됩니다.
-   */
+  /** * 데이터 그리드 컬럼 구성 */
   const columns = useMemo(() => {
     const baseCols = [
       { 
@@ -227,7 +232,6 @@ const BarcodeScanPage = () => {
       }
     ];
 
-    // 가변 데이터 필드를 데이터 그리드의 컬럼으로 매핑
     const dynamicCols = templateItems.map(item => ({
       field: item.label, 
       headerName: item.label, 
@@ -270,14 +274,11 @@ const BarcodeScanPage = () => {
         display: 'flex', 
         flexDirection: 'column', 
         gap: 2,
-        // ★ 일괄 160px 보정으로 외부 스크롤 강제 차단
         height: 'calc(100vh - 160px)',
         width: '100%',
         overflow: 'hidden'
       }}
     >
-      
-      {/* 1. 페이지 타이틀 */}
       <Typography 
         variant="h5" 
         fontWeight="bold"
@@ -286,23 +287,18 @@ const BarcodeScanPage = () => {
         바코드 실시간 스캔 및 등록
       </Typography>
 
-      {/* 2. 장치 연결 상태 알림 (미연결 시 경고 표시) */}
       {!isScannerConnected && (
         <Alert 
           severity="warning" 
-          sx={{ 
-            mb: 1 
-          }}
+          sx={{ mb: 1 }}
         >
           장치 연결이 필요합니다. 좌측 사이드바 하단에서 <strong>[스캐너 연결]</strong>을 눌러주세요.
         </Alert>
       )}
 
-      {/* 3. 상단 제어부: 양식 선택 및 데이터 파싱 결과 확인 */}
       <Paper 
         sx={{ 
           p: 2.5, 
-          // 하드코딩 색상 제거, 테마 색상 연동
           border: '1px solid',
           borderColor: 'divider',
           backgroundColor: 'background.paper',
@@ -314,17 +310,11 @@ const BarcodeScanPage = () => {
           spacing={3} 
           alignItems="flex-start"
         >
-          
-          {/* 좌측: 라벨 양식 선택 Select */}
           <FormControl 
             size="small" 
-            sx={{ 
-              width: 250 
-            }}
+            sx={{ width: 250 }}
           >
-            <InputLabel>
-              라벨 양식 선택
-            </InputLabel>
+            <InputLabel>라벨 양식 선택</InputLabel>
             <Select 
               value={selectedTemplateId} 
               label="라벨 양식 선택" 
@@ -341,13 +331,11 @@ const BarcodeScanPage = () => {
             </Select>
           </FormControl>
 
-          {/* 중앙 구분선 */}
           <Divider 
             orientation="vertical" 
             flexItem 
           />
 
-          {/* 우측: 파싱 데이터 실시간 확인 영역 */}
           <Box sx={{ flex: 1 }}>
             <Typography 
               variant="caption" 
@@ -379,12 +367,12 @@ const BarcodeScanPage = () => {
                     size="small" 
                     value={metaData[item.label] || ''}
                     onChange={(e) => handleMetaChange(item.label, e.target.value)} 
+                    InputProps={{
+                      readOnly: true,
+                    }}
                     sx={{ 
                       width: 140,
-                      backgroundColor: 'action.hover' // 입력 불가 느낌을 주기 위해 살짝 어두운 배경 처리
-                    }}
-                    InputProps={{
-                      readOnly: true, // 사용자가 수동으로 바꾸지 못하도록 읽기 전용 강제
+                      backgroundColor: 'action.hover'
                     }}
                   />
                 ))
@@ -394,7 +382,6 @@ const BarcodeScanPage = () => {
         </Stack>
       </Paper>
 
-      {/* 4. 중단 제어부: 상태바 및 저장 액션 버튼 */}
       <Paper 
         sx={{ 
           p: 2, 
@@ -437,10 +424,8 @@ const BarcodeScanPage = () => {
         </Stack>
       </Paper>
 
-      {/* 5. 하단: 스캔 데이터 실시간 리스트 (DataTable) */}
       <Paper 
         sx={{ 
-          // flex: 1을 주어 남은 높이를 꽉 채우도록 설정
           flex: 1, 
           width: '100%',
           backgroundColor: 'background.paper',

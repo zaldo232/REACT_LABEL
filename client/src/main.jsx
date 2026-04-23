@@ -13,9 +13,6 @@ import App from './App.jsx';
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      {/* 주의: 다크모드 동적 테마 적용을 위해 
-        ThemeProvider와 CssBaseline은 App.jsx 내부로 이동되었습니다. 
-      */}
       <App />
     </BrowserRouter>
   </React.StrictMode>

@@ -1,7 +1,6 @@
 /**
  * @file        Sidebar.jsx
  * @description 애플리케이션 좌측 내비게이션 사이드바 컴포넌트 및 시리얼 바코드 스캐너 연결 관리
- * (어두운 배경에 맞춰 글자와 UI가 명확하게 보이도록 대비(Contrast)를 고정했습니다.)
  */
 
 import React from 'react';
@@ -220,7 +219,6 @@ const Sidebar = ({
         <Typography
           variant="caption"
           sx={{
-            // ★ 핵심 해결: 테마에 묻혀 시꺼멓게 변하지 않도록 명시적 밝은 색상 지정
             color: 'rgba(255, 255, 255, 0.6)', 
             display: 'block',
             mb: 1,

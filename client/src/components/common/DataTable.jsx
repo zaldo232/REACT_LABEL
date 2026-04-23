@@ -1,7 +1,7 @@
 /**
  * @file        DataTable.jsx
  * @description 애플리케이션 전역에서 사용되는 공통 데이터 그리드 컴포넌트
- * (페이징, 로딩 상태를 관리하며 테마 설정에 연동되어 다크모드를 지원합니다.)
+ * (페이징, 로딩 상태를 관리하며 테마 설정에 연동되어 라이트/다크 모드를 완벽히 지원합니다.)
  */
 
 import React from 'react';
@@ -22,7 +22,7 @@ const DataTable = ({
   pageSize = 10 
 }) => {
 
-  /** [렌더링 영역] */
+  /** [영역 분리: 렌더링 영역] */
   return (
     <Box 
       sx={{ 
@@ -31,18 +31,23 @@ const DataTable = ({
       }}
     >
       <DataGrid
-        // 데이터 및 로딩 설정
+        // [데이터 및 기본 설정]
         rows={rows}
         columns={columns}
         loading={loading}
         
-        // 페이징 옵션 배열 수직 정렬 규칙 적용
+        // [사용자 인터랙션 제어]
+        disableRowSelectionOnClick
+        
+        // [페이징 옵션] - 배열 요소 수직 정렬 규칙 적용
         pageSizeOptions={[
           5, 
           10, 
           25, 
           50
         ]}
+        
+        // [초기 상태 설정] - 객체 내부 요소 줄바꿈 및 수직 정렬
         initialState={{
           pagination: {
             paginationModel: { 
@@ -51,28 +56,32 @@ const DataTable = ({
           },
         }}
 
-        // 사용자 인터랙션 설정
-        disableRowSelectionOnClick
-        
-        // 테이블 디자인 커스텀 (하드코딩 색상 제거, 테마 layout.datagrid 연동)
+        // [스타일링 커스텀] - 테마 연동 및 하드코딩 색상 배제
         sx={{
-          border: '1px solid',
-          borderColor: (theme) => theme.palette.layout.datagrid.border,
-          backgroundColor: 'background.paper', // 다크모드 배경색 대응
+          border: 'none', // 부모 Paper에서 테두리를 관리하므로 내부 선은 제거하여 깔끔함 유지
+          backgroundColor: 'background.paper',
           
           // 헤더 영역 스타일링
           '& .MuiDataGrid-columnHeaders': {
             backgroundColor: (theme) => theme.palette.layout.datagrid.headerBg,
             color: (theme) => theme.palette.layout.datagrid.headerFont,
-            fontWeight: 'bold',
-          },
-          
-          // 마우스 호버 시 행(Row) 색상
-          '& .MuiDataGrid-row:hover': {
-            backgroundColor: (theme) => theme.palette.layout.datagrid.rowHover,
+            fontWeight: 700,
+            borderBottom: (theme) => `1px solid ${theme.palette.layout.datagrid.border}`,
           },
 
-          // 행 선택 시 색상 (disableRowSelectionOnClick을 쓰더라도 클릭 피드백 제어)
+          // 데이터 셀 경계선 스타일링
+          '& .MuiDataGrid-cell': {
+            borderBottom: (theme) => `1px solid ${theme.palette.layout.datagrid.border}`,
+            color: 'text.primary',
+          },
+          
+          // 마우스 호버 시 행(Row) 배경색
+          '& .MuiDataGrid-row:hover': {
+            backgroundColor: (theme) => theme.palette.layout.datagrid.rowHover,
+            cursor: 'pointer',
+          },
+
+          // 행 선택 시 색상 (클릭 시 시각적 피드백 강화)
           '& .MuiDataGrid-row.Mui-selected': {
             backgroundColor: (theme) => theme.palette.layout.datagrid.selectedRow,
             '&:hover': {
@@ -80,14 +89,24 @@ const DataTable = ({
             }
           },
           
-          // 셀 선택 시 나타나는 기본 파란색 아웃라인 제거
+          // 셀 선택 시 나타나는 기본 아웃라인 제거 (포커스 방지)
           '& .MuiDataGrid-cell:focus': {
             outline: 'none',
           },
+
+          '& .MuiDataGrid-columnHeader:focus': {
+            outline: 'none',
+          },
           
-          // 가독성을 위한 그리드 헤더 세로 구분선 숨김 처리
+          // 가독성을 위한 헤더 세로 구분선 숨김
           '& .MuiDataGrid-columnSeparator': {
             display: 'none',
+          },
+
+          // 하단 푸터(페이징 영역) 스타일링
+          '& .MuiDataGrid-footerContainer': {
+            borderTop: (theme) => `1px solid ${theme.palette.layout.datagrid.border}`,
+            backgroundColor: (theme) => theme.palette.layout.datagrid.headerBg,
           },
         }}
       />
