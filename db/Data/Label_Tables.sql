@@ -1,4 +1,4 @@
-USE REACT_BASE
+USE REACT_LABEL_DB
 GO
 
 -- 1. 라벨 디자인 템플릿 테이블 (원본 양식 저장)

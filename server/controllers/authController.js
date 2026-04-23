@@ -1,33 +1,21 @@
 /**
  * @file        authController.js
- * @description 사용자 인증 및 세션 수명 관리를 담당하는 컨트롤러
+ * @description 사용자 인증 처리 및 세션 수명 관리 컨트롤러
+ * (단기 세션 연장을 위한 정보 포함 및 만료 시 401 반환 처리)
  */
 
-/** [의존성 정의] */
 const { executeProcedure } = require('../config/db');
 
-/** [인증 컨트롤러 객체 정의] */
 const authController = {
 
   /**
    * [메소드] 로그인 처리 (login)
-   * @description 아이디/비번 검증 후 '로그인 상태 유지' 여부에 따라 세션 쿠키 수명을 설정합니다.
    */
   login: async (req, res) => {
     try {
-      /** [로직] 클라이언트 요청 데이터 추출 */
-      const { 
-        userId, 
-        userPwd,
-        rememberMe // 프론트엔드 체크박스 상태
-      } = req.body;
-      
-      /** [로직] DB 프로시저 호출 */
-      const users = await executeProcedure('UP_USER_LOGIN', { 
-        UserId: userId 
-      });
+      const { userId, userPwd, rememberMe } = req.body;
+      const users = await executeProcedure('UP_USER_LOGIN', { UserId: userId });
 
-      // 1. 사용자 존재 여부 및 비밀번호 검증
       if (users.length === 0 || users[0].UserPwd !== userPwd) {
         return res.status(401).json({ 
           success: false, 
@@ -37,21 +25,29 @@ const authController = {
 
       const user = users[0];
 
-      /** [로직] 세션 데이터 구성 (수직 정렬 적용) */
+      /** [로직] 세션 데이터 구성
+       * - isLongSession: 자동 로그인(1년) 여부를 저장하여 프론트에서 활용
+       */
       req.session.user = {
-        userId:   user.UserId,
-        userName: user.UserName,
-        role:     user.Role
+        userId:        user.UserId,
+        userName:      user.UserName,
+        role:          user.Role,
+        isLongSession: !!rememberMe 
       };
 
-      /** [로직] 세션 쿠키 수명(MaxAge) 설정
-       * - rememberMe true: 1년 (365일 * 24시간 * 60분 * 60초 * 1000ms)
-       * - rememberMe false: 60분 (60분 * 60초 * 1000ms)
-       */
+      /** [로직] 세션 쿠키 수명(MaxAge) 설정 */
       if (rememberMe) {
+        // [운영] 1년 설정 (365일)
         req.session.cookie.maxAge = 365 * 24 * 60 * 60 * 1000;
+        
+        // [테스트] 5초 설정 (테스트 시 아래 주석 해제)
+        //req.session.cookie.maxAge = 5 * 1000; 
       } else {
+        // [운영] 60분 설정
         req.session.cookie.maxAge = 60 * 60 * 1000;
+
+        // [테스트] 5초 설정 (테스트 시 아래 주석 해제)
+        //req.session.cookie.maxAge = 1.5 * 1000;
       }
 
       res.json({ 
@@ -61,19 +57,14 @@ const authController = {
 
     } catch (error) {
       console.error('Login Error:', error);
-      res.status(500).json({ 
-        success: false, 
-        message: '서버 오류가 발생했습니다.' 
-      });
+      res.status(500).json({ success: false, message: '서버 오류' });
     }
   },
 
   /**
    * [메소드] 세션 상태 확인 (checkSession)
-   * @description 새로고침 시 프론트엔드에서 호출하여 세션 유효성을 확인합니다.
    */
   checkSession: (req, res) => {
-    // 세션 존재 여부에 따른 응답 반환
     if (req.session && req.session.user) {
       res.json({ 
         success: true, 
@@ -81,9 +72,11 @@ const authController = {
         user:    req.session.user 
       });
     } else {
-      res.json({ 
-        success: true, 
-        isAuth:  false 
+      /** 401을 반환해야 클라이언트 인터셉터에서 알람 팝업이 뜹니다. */
+      res.status(401).json({ 
+        success: false, 
+        isAuth:  false,
+        message: '세션이 만료되었습니다.'
       });
     }
   },
@@ -93,9 +86,7 @@ const authController = {
    */
   logout: (req, res) => {
     req.session.destroy((err) => {
-      if (err) {
-        return res.status(500).json({ success: false });
-      }
+      if (err) return res.status(500).json({ success: false });
       res.clearCookie('connect.sid'); 
       res.json({ success: true });
     });

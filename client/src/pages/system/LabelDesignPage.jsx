@@ -1,6 +1,7 @@
 /**
- * @file      LabelDesignPage.jsx
+ * @file        LabelDesignPage.jsx
  * @description 전문 디자인 툴 방식의 라벨 편집기 페이지
+ * (바코드/QR코드 데이터 자동 조합 미리보기 및 프로젝트 작성 규칙 완벽 적용)
  */
 
 import React, { 
@@ -78,17 +79,20 @@ import {
   showConfirm 
 } from '../../utils/swal';
 
-/** [상수] mm 단위를 화면 px 단위로 변환하기 위한 비율 (96dpi 기준) */
+/** * [상수] mm 단위를 화면 px 단위로 변환하기 위한 비율 (96dpi 기준) 
+ */
 const MM_PX_UNIT = 3.78; 
 
 const LabelDesignPage = () => {
-  /** [영역 분리: 상태 관리 - 템플릿 및 개체 데이터] */
+  /** * [영역 분리: 상태 관리 - 템플릿 및 개체 데이터] 
+   */
   const [templateId, setTemplateId] = useState(null);           
   const [templateName, setTemplateName] = useState('');         
   const [items, setItems] = useState([]);             
   const [selectedIds, setSelectedIds] = useState([]);
 
-  /** [영역 분리: 상태 관리 - 캔버스 및 정밀 제어] */
+  /** * [영역 분리: 상태 관리 - 캔버스 및 정밀 제어] 
+   */
   const [layout, setLayout] = useState({ 
     labelW: '100', 
     labelH: '50', 
@@ -99,7 +103,8 @@ const LabelDesignPage = () => {
   const [snapToGrid, setSnapToGrid] = useState(true); 
   const [gridSize, setGridSize] = useState(2);
 
-  /** [영역 분리: 상태 관리 - 드로잉, 패닝 및 리사이징 모드] */
+  /** * [영역 분리: 상태 관리 - 드로잉, 패닝 및 리사이징 모드] 
+   */
   const [activeTool, setActiveTool] = useState('select'); 
   const [isDrawing, setIsDrawing] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
@@ -109,24 +114,33 @@ const LabelDesignPage = () => {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [tempRect, setTempRect] = useState(null);
 
-  /** [영역 분리: 상태 관리 - UI 요소 제어] */
+  /** * [영역 분리: 상태 관리 - UI 요소 제어] 
+   */
   const [openDbDialog, setOpenDbDialog] = useState(false);       
   const [dbList, setDbList] = useState([]);                      
 
-  /** [영역 분리: Ref - DOM 및 스크롤/드래그 참조] */
+  /** * [영역 분리: Ref - DOM 및 스크롤/드래그 참조] 
+   */
   const canvasRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const nodeRefs = useRef({});       
   const fileInputRef = useRef(null);
   const imageInputRef = useRef(null);
-  const dragInfoRef = useRef({ startX: 0, startY: 0, isDragging: false });
+  const dragInfoRef = useRef({ 
+    startX: 0, 
+    startY: 0, 
+    isDragging: false 
+  });
 
-  /** [영역 분리: 파생 상태] 단일 개체 선택 최적화 */
+  /** * [영역 분리: 파생 상태] 
+   * 단일 개체 선택 최적화 및 속성 패널용 타겟 요소
+   */
   const targetItem = selectedIds.length === 1 
     ? items.find(i => i.id === selectedIds[0]) 
     : null;
 
-  /** [영역 분리: 로직 - 툴 변경 시 자동 선택 해제] */
+  /** * [영역 분리: 이벤트 핸들러 - 툴 제어] 
+   */
   const handleToolChange = (tool) => {
     setActiveTool(tool);
     if (tool !== 'select') {
@@ -134,7 +148,8 @@ const LabelDesignPage = () => {
     }
   };
 
-  /** [영역 분리: 로직 - 좌표 변환 및 스냅 계산] */
+  /** * [영역 분리: 로직 - 좌표 변환 및 스냅 계산] 
+   */
   const getMmPos = (e) => {
     const rect = canvasRef.current.getBoundingClientRect();
     const pxX = (e.clientX - rect.left) / zoom;
@@ -155,7 +170,8 @@ const LabelDesignPage = () => {
     return Math.round(val / gridSize) * gridSize;
   };
 
-  /** [영역 분리: 로직 - 개체 실제 크기(Bounding Box) 측정] */
+  /** * [영역 분리: 로직 - 개체 실제 크기(Bounding Box) 측정] 
+   */
   const getRealBBox = (item) => {
     if (['text', 'data', 'date'].includes(item.type)) {
       const el = nodeRefs.current[item.id]?.current;
@@ -163,18 +179,32 @@ const LabelDesignPage = () => {
         const rect = el.getBoundingClientRect();
         const realW = rect.width / zoom / MM_PX_UNIT;
         const realH = rect.height / zoom / MM_PX_UNIT;
-        return { x: item.x, y: item.y, w: realW, h: realH };
+        return { 
+          x: item.x, 
+          y: item.y, 
+          w: realW, 
+          h: realH 
+        };
       }
     }
-    return { x: item.x, y: item.y, w: item.width || 0, h: item.height || 0 };
+    return { 
+      x: item.x, 
+      y: item.y, 
+      w: item.width || 0, 
+      h: item.height || 0 
+    };
   };
 
-  /** [영역 분리: 로직 - 개체 정렬 및 간격 맞춤 (DOM 기반 완벽 보정)] */
+  /** * [영역 분리: 로직 - 다중 개체 정렬 및 간격 맞춤] 
+   */
   const alignSelectedItems = (type) => {
     if (selectedIds.length < 2) return;
 
     const selectedItems = items.filter((i) => selectedIds.includes(i.id));
-    const bboxes = selectedItems.map(item => ({ item, bbox: getRealBBox(item) }));
+    const bboxes = selectedItems.map(item => ({ 
+      item, 
+      bbox: getRealBBox(item) 
+    }));
     
     const minX = Math.min(...bboxes.map(b => b.bbox.x));
     const maxX = Math.max(...bboxes.map(b => b.bbox.x + b.bbox.w));
@@ -208,7 +238,9 @@ const LabelDesignPage = () => {
       });
 
       setItems((prev) => prev.map((item) => 
-        targetX[item.id] !== undefined ? { ...item, x: targetX[item.id] } : item
+        targetX[item.id] !== undefined 
+          ? { ...item, x: targetX[item.id] } 
+          : item
       ));
       return;
     }
@@ -237,7 +269,9 @@ const LabelDesignPage = () => {
       });
 
       setItems((prev) => prev.map((item) => 
-        targetY[item.id] !== undefined ? { ...item, y: targetY[item.id] } : item
+        targetY[item.id] !== undefined 
+          ? { ...item, y: targetY[item.id] } 
+          : item
       ));
       return;
     }
@@ -258,16 +292,24 @@ const LabelDesignPage = () => {
         case 'v-center': newY = boxCenterY - (bbox.h / 2); break;
         default: break;
       }
-      return { ...item, x: newX, y: newY };
+      return { 
+        ...item, 
+        x: newX, 
+        y: newY 
+      };
     }));
   };
 
-  /** [영역 분리: 로직 - 바코드 데이터 조합 및 KST 날짜 처리] */
+  /** * [영역 분리: 로직 - 날짜/시간 처리 (KST 타임존 적용)] 
+   * @description 현재 시간을 기준으로 한국 표준시(KST, UTC+9)를 철저히 고려하여 변환합니다.
+   */
   const getKstPreviewDate = (format) => {
     if (!format) return '';
     const now = new Date();
+    // UTC 시간에 9시간을 더하여 KST 도출
     const kst = new Date(now.getTime() + (9 * 60 * 60 * 1000));
     const pad = (n) => String(n).padStart(2, '0');
+    
     return format
       .replace(/YYYY/g, kst.getUTCFullYear())
       .replace(/MM/g, pad(kst.getUTCMonth() + 1))
@@ -277,6 +319,9 @@ const LabelDesignPage = () => {
       .replace(/ss/g, pad(kst.getUTCSeconds()));
   };
 
+  /** * [영역 분리: 파생 데이터 - 바코드 및 QR코드용 데이터 조합] 
+   * @description 화면 내의 모든 'data'와 'date' 개체의 값을 접두어와 함께 조합하여 바코드용 데이터 스트링을 생성합니다.
+   */
   const codeDataWithPrefix = useMemo(() => {
     return items
       .filter((i) => i.type === 'data' || i.type === 'date')
@@ -284,18 +329,25 @@ const LabelDesignPage = () => {
         let val = i.type === 'date' 
           ? getKstPreviewDate(i.content) 
           : (i.content || 'DATA');
+        // 바코드 인식 오류를 방지하기 위해 날짜 특수문자 제거
         if (i.type === 'date') val = val.replace(/[-_:\s]/g, ''); 
         return `${i.prefix || ''}${val}`;
       })
       .join(layout.delimiter || '');
   }, [items, layout.delimiter]);
 
-  /** [영역 분리: 이벤트 핸들러 - 개체 드래그 및 튕김 방어] */
+  /** * [영역 분리: 이벤트 핸들러 - 개체 드래그 및 마우스 조작] 
+   */
   const handleDragStart = (e, data) => {
-    dragInfoRef.current = { startX: data.x, startY: data.y, isDragging: false };
+    dragInfoRef.current = { 
+      startX: data.x, 
+      startY: data.y, 
+      isDragging: false 
+    };
   };
 
   const handleGroupDrag = (e, data) => {
+    // 튕김 및 미세 떨림 방어 로직
     if (Math.abs(data.x - dragInfoRef.current.startX) > 2 || Math.abs(data.y - dragInfoRef.current.startY) > 2) {
       dragInfoRef.current.isDragging = true;
     }
@@ -316,7 +368,10 @@ const LabelDesignPage = () => {
   };
 
   const handleDragStop = () => {
-    setTimeout(() => { dragInfoRef.current.isDragging = false; }, 100);
+    setTimeout(() => { 
+      dragInfoRef.current.isDragging = false; 
+    }, 100);
+    
     setItems((prev) => prev.map((item) => {
       if (selectedIds.includes(item.id)) {
         return {
@@ -335,27 +390,35 @@ const LabelDesignPage = () => {
     if (activeTool !== 'select') return;
 
     if (e.shiftKey) {
-      setSelectedIds((prev) => prev.includes(id) ? prev.filter((sid) => sid !== id) : [...prev, id]);
+      setSelectedIds((prev) => 
+        prev.includes(id) 
+          ? prev.filter((sid) => sid !== id) 
+          : [...prev, id]
+      );
     } else {
       setSelectedIds([id]);
     }
   };
 
-  // ★ 상태 변경 로직 개선: 단일 필드 변경 뿐만 아니라 여러 객체를 동시에 수정할 수 있도록 처리
+  /** * [영역 분리: 로직 - 개별 및 다중 속성 업데이트] 
+   * @description 단일 필드 변경 뿐만 아니라 객체 형태를 넘겨 여러 필드를 동시 업데이트할 수 있습니다.
+   */
   const updateItem = (id, fieldOrObj, value) => {
     setItems((prev) => prev.map((item) => {
       if (item.id === id) {
         if (typeof fieldOrObj === 'object') {
-          return { ...item, ...fieldOrObj };
+          return { 
+            ...item, 
+            ...fieldOrObj 
+          };
         }
-        return { ...item, [fieldOrObj]: value };
+        return { 
+          ...item, 
+          [fieldOrObj]: value 
+        };
       }
       return item;
     }));
-  };
-
-  const handleRotate = (id, angle) => {
-    updateItem(id, 'rotate', angle);
   };
 
   const deleteSelectedItems = useCallback(() => {
@@ -365,7 +428,8 @@ const LabelDesignPage = () => {
     }
   }, [selectedIds]);
 
-  /** [영역 분리: 부수 효과 - 전역 마우스 감시 (리사이징/그리기/패닝)] */
+  /** * [영역 분리: 부수 효과 (Effect) - 전역 마우스/키보드 감시] 
+   */
   useEffect(() => {
     const handleGlobalMouseMove = (e) => {
       if (isResizing && selectedIds.length === 1) {
@@ -378,12 +442,15 @@ const LabelDesignPage = () => {
         if (item.type === 'line') {
            updateItem(item.id, { 
              width: Math.max(0.5, newW), 
-             borderWidth: Math.max(1, Math.round(newH * MM_PX_UNIT)) 
+             height: Math.max(0.5, newH) 
            });
         } else if (item.type === 'qrcode') {
-           // ★ QR 코드 크기 조절 시 강제로 가로세로 1:1 비율 유지
+           // QR 코드의 1:1 비율 강제 유지
            const size = Math.max(0.5, Math.max(newW, newH));
-           updateItem(item.id, { width: size, height: size });
+           updateItem(item.id, { 
+             width: size, 
+             height: size 
+           });
         } else {
            updateItem(item.id, { 
              width: Math.max(0.5, newW), 
@@ -396,16 +463,13 @@ const LabelDesignPage = () => {
         const currentPos = getMmPos(e);
         let rawW = currentPos.x - drawStart.x;
         let rawH = currentPos.y - drawStart.y;
-        
         let w = Math.abs(rawW);
         let h = Math.abs(rawH);
 
-        // ★ 드래그해서 QR 코드를 새로 그릴 때도 강제로 1:1 비율을 유지하도록 보정
         if (activeTool === 'qrcode') {
            const size = Math.max(w, h);
-           w = size;
+           w = size; 
            h = size;
-           // 마우스 방향에 맞춰 좌표 계산을 올바르게 하기 위해 음수/양수 방향 보정
            rawW = rawW < 0 ? -size : size;
            rawH = rawH < 0 ? -size : size;
         }
@@ -413,7 +477,7 @@ const LabelDesignPage = () => {
         setTempRect({
           x: Math.min(drawStart.x, drawStart.x + rawW),
           y: Math.min(drawStart.y, drawStart.y + rawH),
-          w,
+          w, 
           h
         });
       }
@@ -423,7 +487,10 @@ const LabelDesignPage = () => {
         const dy = e.clientY - panStart.y;
         scrollContainerRef.current.scrollLeft -= dx;
         scrollContainerRef.current.scrollTop -= dy;
-        setPanStart({ x: e.clientX, y: e.clientY });
+        setPanStart({ 
+          x: e.clientX, 
+          y: e.clientY 
+        });
       }
     };
 
@@ -446,9 +513,14 @@ const LabelDesignPage = () => {
       window.removeEventListener('mouseup', handleGlobalMouseUp);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isResizing, isDrawing, isPanning, selectedIds, items, zoom, showGrid, snapToGrid, gridSize, drawStart, panStart, deleteSelectedItems, activeTool]);
+  }, [
+    isResizing, isDrawing, isPanning, selectedIds, 
+    items, zoom, showGrid, snapToGrid, gridSize, 
+    drawStart, panStart, deleteSelectedItems, activeTool
+  ]);
 
-  /** [영역 분리: 이벤트 핸들러 - 캔버스 바탕 클릭 및 휠] */
+  /** * [영역 분리: 이벤트 핸들러 - 캔버스 바탕 클릭 및 화면 배율 조작] 
+   */
   const handleMouseDownCanvas = (e) => {
     if (e.target === canvasRef.current || e.target === scrollContainerRef.current) {
       setSelectedIds([]);
@@ -456,7 +528,10 @@ const LabelDesignPage = () => {
 
     if (activeTool === 'pan') {
       setIsPanning(true);
-      setPanStart({ x: e.clientX, y: e.clientY });
+      setPanStart({ 
+        x: e.clientX, 
+        y: e.clientY 
+      });
       return;
     }
 
@@ -465,7 +540,12 @@ const LabelDesignPage = () => {
     setIsDrawing(true);
     const pos = getMmPos(e);
     setDrawStart(pos);
-    setTempRect({ x: pos.x, y: pos.y, w: 0, h: 0 });
+    setTempRect({ 
+      x: pos.x, 
+      y: pos.y, 
+      w: 0, 
+      h: 0 
+    });
   };
 
   const handleMouseUpCanvas = () => {
@@ -478,14 +558,12 @@ const LabelDesignPage = () => {
     
     if (tempRect.w > 0.5 || tempRect.h > 0.5) {
       const newId = `item-${Date.now()}`;
-      
       let finalW = applySnap(tempRect.w, true) || 20;
       let finalH = applySnap(tempRect.h, true) || (activeTool === 'line' ? 1 : activeTool === 'qrcode' ? 20 : 10);
       
-      // ★ 클릭만으로 QR 코드 생성 시 기본값도 1:1 보정
       if (activeTool === 'qrcode') {
          const size = Math.max(finalW, finalH);
-         finalW = size;
+         finalW = size; 
          finalH = size;
       }
 
@@ -530,12 +608,18 @@ const LabelDesignPage = () => {
     }
   };
 
-  /** [영역 분리: 이벤트 핸들러 - 데이터 입출력] */
+  /** * [영역 분리: 이벤트 핸들러 - JSON 데이터 입출력 (Export/Import)] 
+   */
   const handleExportJson = () => {
-    const data = { templateName, layout, items };
+    const data = { 
+      templateName, 
+      layout, 
+      items 
+    };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
+    
     link.href = url; 
     link.download = `${templateName || 'label'}.json`; 
     link.click();
@@ -544,6 +628,7 @@ const LabelDesignPage = () => {
   const handleImportJson = (e) => {
     const file = e.target.files[0]; 
     if (!file) return;
+    
     const reader = new FileReader();
     reader.onload = (event) => {
       try {
@@ -561,8 +646,13 @@ const LabelDesignPage = () => {
     e.target.value = null;
   };
 
+  /** * [영역 분리: API 연동 및 서버 통신] 
+   */
   const requestSave = async (targetId) => {
-    if (!templateName) return showAlert("확인", "warning", "양식 이름을 입력하세요.");
+    if (!templateName) {
+      return showAlert("확인", "warning", "양식 이름을 입력하세요.");
+    }
+    
     try {
       const payload = {
         templateId:   targetId, 
@@ -582,6 +672,7 @@ const LabelDesignPage = () => {
   const handleDeleteTemplate = async (e, id, name) => {
     e.stopPropagation();
     const confirmed = await showConfirm("삭제", `[${name}] 양식을 삭제할까요?`);
+    
     if (confirmed) {
       try {
         await apiClient.delete(`/label/template/${id}`);
@@ -597,13 +688,15 @@ const LabelDesignPage = () => {
   const handleImageUpload = (e) => {
     const file = e.target.files[0]; 
     if (!file || selectedIds.length !== 1) return;
+    
     const reader = new FileReader();
     reader.onload = (ev) => updateItem(selectedIds[0], 'src', ev.target.result);
     reader.readAsDataURL(file); 
     e.target.value = null;
   };
 
-  /** [영역 분리: 렌더링 영역] */
+  /** * [영역 분리: 렌더링 영역 - 전체 화면 구조] 
+   */
   return (
     <Box 
       sx={{ 
@@ -615,7 +708,7 @@ const LabelDesignPage = () => {
       }}
     >
       
-      {/* 1. 좌측 도구 모음 */}
+      {/* 1. 좌측 도구 모음 패널 */}
       <Paper 
         elevation={0} 
         sx={{ 
@@ -689,7 +782,7 @@ const LabelDesignPage = () => {
         ))}
       </Paper>
 
-      {/* 2. 중앙 메인 작업 영역 */}
+      {/* 2. 중앙 캔버스 작업 영역 */}
       <Box 
         sx={{ 
           flex:          1, 
@@ -730,7 +823,9 @@ const LabelDesignPage = () => {
               max={3} 
               step={0.1} 
               onChange={(e, v) => setZoom(v)} 
-              sx={{ width: 80 }} 
+              sx={{ 
+                width: 80 
+              }} 
             />
             <FormControlLabel 
               control={
@@ -754,8 +849,11 @@ const LabelDesignPage = () => {
                   type="number"
                   variant="outlined"
                   value={gridSize}
+                  // 엣지 케이스 방지: 값이 지워졌을 때 NaN을 대비하여 1mm 고정 적용
                   onChange={(e) => setGridSize(Math.max(0.1, parseFloat(e.target.value) || 1))}
-                  sx={{ width: 65 }}
+                  sx={{ 
+                    width: 65 
+                  }}
                   inputProps={{ 
                     step: 0.5, 
                     min: 0.1, 
@@ -796,7 +894,12 @@ const LabelDesignPage = () => {
               size="small" 
               variant="outlined" 
               startIcon={<FolderOpenIcon />} 
-              onClick={() => apiClient.get('/label/template/list').then(res => { setDbList(res.data.data || []); setOpenDbDialog(true); })}
+              onClick={() => {
+                apiClient.get('/label/template/list').then(res => { 
+                  setDbList(res.data.data || []); 
+                  setOpenDbDialog(true); 
+                });
+              }}
             >
               불러오기
             </Button>
@@ -949,7 +1052,7 @@ const LabelDesignPage = () => {
                           }}
                         >
                           
-                          {/* 1. 텍스트 요소들 */}
+                          {/* 렌더링 1. 텍스트 개체들 (데이터 및 날짜 처리 통합 적용) */}
                           {isTextType && (
                             <Box 
                               sx={{ 
@@ -970,11 +1073,16 @@ const LabelDesignPage = () => {
                                   fontStyle:  item.fontStyle || 'normal'
                                 }}
                               >
-                                {item.type === 'date' ? getKstPreviewDate(item.content) : item.content}
+                                {item.type === 'date' 
+                                  ? `${item.prefix || ''}${getKstPreviewDate(item.content)}` 
+                                  : item.type === 'data' 
+                                    ? `${item.prefix || ''}${item.content}` 
+                                    : item.content}
                               </Typography>
                             </Box>
                           )}
                           
+                          {/* 렌더링 2. 사각형 개체 */}
                           {item.type === 'rect' && (
                             <Box 
                               sx={{ 
@@ -986,6 +1094,7 @@ const LabelDesignPage = () => {
                             />
                           )}
                           
+                          {/* 렌더링 3. 타원(원) 개체 */}
                           {item.type === 'circle' && (
                             <Box 
                               sx={{ 
@@ -998,7 +1107,7 @@ const LabelDesignPage = () => {
                             />
                           )}
                           
-                          {/* 선(Line)을 박스 영역을 완전히 채우도록 변경 */}
+                          {/* 렌더링 4. 선 개체 */}
                           {item.type === 'line' && (
                             <Box 
                               sx={{ 
@@ -1009,6 +1118,7 @@ const LabelDesignPage = () => {
                             />
                           )}
                           
+                          {/* 렌더링 5. 이미지 개체 */}
                           {item.type === 'image' && (
                             <Box 
                               sx={{ 
@@ -1037,6 +1147,7 @@ const LabelDesignPage = () => {
                             </Box>
                           )}
                           
+                          {/* 렌더링 6. 바코드 개체 (조합된 데이터 실시간 반응) */}
                           {item.type === 'barcode' && (
                             <Box 
                               sx={{ 
@@ -1070,6 +1181,7 @@ const LabelDesignPage = () => {
                             </Box>
                           )}
                           
+                          {/* 렌더링 7. QR코드 개체 (조합된 데이터 실시간 반응) */}
                           {item.type === 'qrcode' && (
                             <Box 
                               sx={{ 
@@ -1081,11 +1193,15 @@ const LabelDesignPage = () => {
                                 value={codeDataWithPrefix || 'DATA'} 
                                 level={item.qrErrorLevel || 'M'} 
                                 size={item.height * MM_PX_UNIT} 
-                                style={{ width: '100%', height: '100%' }}
+                                style={{ 
+                                  width: '100%', 
+                                  height: '100%' 
+                                }}
                               />
                             </Box>
                           )}
                           
+                          {/* 렌더링 8. 선택 영역 우측 하단 리사이징 조절자 */}
                           {isSel && selectedIds.length === 1 && !isTextType && (
                             <Box 
                               onMouseDown={(e) => { 
@@ -1117,7 +1233,7 @@ const LabelDesignPage = () => {
         </Box>
       </Box>
 
-      {/* 3. 우측 속성 패널 */}
+      {/* 3. 우측 객체 속성(Properties) 패널 */}
       <Box 
         sx={{ 
           width:           320, 
@@ -1148,7 +1264,7 @@ const LabelDesignPage = () => {
           
           {selectedIds.length > 0 ? (
             <Stack spacing={2.5}>
-               {/* 레이어 이름 수정 필드 */}
+               {/* 3-1. 레이어 식별 이름 (단일 선택 시 노출) */}
                {selectedIds.length === 1 && (
                  <TextField 
                    label="레이어 이름" 
@@ -1159,7 +1275,7 @@ const LabelDesignPage = () => {
                  />
                )}
 
-               {/* 정렬 및 간격 맞춤 툴바 */}
+               {/* 3-2. 다중 개체 정렬 툴바 */}
                {selectedIds.length > 1 && (
                  <MuiPaper 
                    variant="outlined" 
@@ -1176,20 +1292,47 @@ const LabelDesignPage = () => {
                     >
                       개체 정렬 및 간격 맞춤
                     </Typography>
+                    
                     <Stack 
                       direction="row" 
                       spacing={0.5} 
                       justifyContent="space-between" 
                       mb={1}
                     >
-                      <Tooltip title="좌측 맞춤"><IconButton size="small" onClick={() => alignSelectedItems('left')}><AlignHorizontalLeftIcon fontSize="small"/></IconButton></Tooltip>
-                      <Tooltip title="수평 중앙 맞춤"><IconButton size="small" onClick={() => alignSelectedItems('h-center')}><AlignHorizontalCenterIcon fontSize="small"/></IconButton></Tooltip>
-                      <Tooltip title="우측 맞춤"><IconButton size="small" onClick={() => alignSelectedItems('right')}><AlignHorizontalRightIcon fontSize="small"/></IconButton></Tooltip>
-                      <Tooltip title="상단 맞춤"><IconButton size="small" onClick={() => alignSelectedItems('top')}><AlignVerticalTopIcon fontSize="small"/></IconButton></Tooltip>
-                      <Tooltip title="수직 중앙 맞춤"><IconButton size="small" onClick={() => alignSelectedItems('v-center')}><AlignVerticalCenterIcon fontSize="small"/></IconButton></Tooltip>
-                      <Tooltip title="하단 맞춤"><IconButton size="small" onClick={() => alignSelectedItems('bottom')}><AlignVerticalBottomIcon fontSize="small"/></IconButton></Tooltip>
+                      <Tooltip title="좌측 맞춤">
+                        <IconButton size="small" onClick={() => alignSelectedItems('left')}>
+                          <AlignHorizontalLeftIcon fontSize="small"/>
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="수평 중앙 맞춤">
+                        <IconButton size="small" onClick={() => alignSelectedItems('h-center')}>
+                          <AlignHorizontalCenterIcon fontSize="small"/>
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="우측 맞춤">
+                        <IconButton size="small" onClick={() => alignSelectedItems('right')}>
+                          <AlignHorizontalRightIcon fontSize="small"/>
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="상단 맞춤">
+                        <IconButton size="small" onClick={() => alignSelectedItems('top')}>
+                          <AlignVerticalTopIcon fontSize="small"/>
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="수직 중앙 맞춤">
+                        <IconButton size="small" onClick={() => alignSelectedItems('v-center')}>
+                          <AlignVerticalCenterIcon fontSize="small"/>
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="하단 맞춤">
+                        <IconButton size="small" onClick={() => alignSelectedItems('bottom')}>
+                          <AlignVerticalBottomIcon fontSize="small"/>
+                        </IconButton>
+                      </Tooltip>
                     </Stack>
+
                     <Divider sx={{ my: 1 }} />
+                    
                     <Stack 
                       direction="row" 
                       spacing={1} 
@@ -1217,6 +1360,7 @@ const LabelDesignPage = () => {
                  </MuiPaper>
                )}
 
+               {/* 3-3. 단일 개체 제어 속성 그룹 */}
                {selectedIds.length === 1 && (
                  <>
                    <FormControlLabel 
@@ -1237,7 +1381,6 @@ const LabelDesignPage = () => {
                      } 
                    />
                    
-                   {/* 회전 직접 입력 필드 */}
                    <MuiPaper 
                      variant="outlined" 
                      sx={{ 
@@ -1272,8 +1415,11 @@ const LabelDesignPage = () => {
                           variant="outlined" 
                           type="number" 
                           value={targetItem?.rotate || 0} 
-                          onChange={(e) => updateItem(selectedIds[0], 'rotate', parseInt(e.target.value) || 0)} 
-                          sx={{ width: 65 }} 
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value);
+                            updateItem(selectedIds[0], 'rotate', isNaN(val) ? 0 : val);
+                          }} 
+                          sx={{ width: 100 }} 
                           inputProps={{ 
                             style: { 
                               fontSize:  '0.75rem', 
@@ -1294,18 +1440,24 @@ const LabelDesignPage = () => {
                        type="number" 
                        size="small" 
                        value={targetItem?.x || 0} 
-                       onChange={(e) => updateItem(selectedIds[0], 'x', parseFloat(e.target.value))} 
+                       onChange={(e) => {
+                         const val = parseFloat(e.target.value);
+                         updateItem(selectedIds[0], 'x', isNaN(val) ? 0 : val);
+                       }} 
                      />
                      <TextField 
                        label="Y위치(mm)" 
                        type="number" 
                        size="small" 
                        value={targetItem?.y || 0} 
-                       onChange={(e) => updateItem(selectedIds[0], 'y', parseFloat(e.target.value))} 
+                       onChange={(e) => {
+                         const val = parseFloat(e.target.value);
+                         updateItem(selectedIds[0], 'y', isNaN(val) ? 0 : val);
+                       }} 
                      />
                    </Stack>
                    
-                   {/* ★ QR코드일 때는 '크기(W/H)' 1개만 표시, 나머지는 '너비/높이'로 구분 */}
+                   {/* 사각형, 선, 바코드/QR 등 도형 계열의 치수 제어 */}
                    {!['text', 'data', 'date'].includes(targetItem?.type) && (
                      <Stack 
                        direction="row" 
@@ -1319,7 +1471,7 @@ const LabelDesignPage = () => {
                            fullWidth
                            value={targetItem?.width || 0} 
                            onChange={(e) => {
-                             const size = parseFloat(e.target.value);
+                             const size = Math.max(1, parseFloat(e.target.value) || 1);
                              updateItem(selectedIds[0], { width: size, height: size });
                            }} 
                          />
@@ -1330,14 +1482,20 @@ const LabelDesignPage = () => {
                              type="number" 
                              size="small" 
                              value={targetItem?.width || 0} 
-                             onChange={(e) => updateItem(selectedIds[0], 'width', parseFloat(e.target.value))} 
+                             onChange={(e) => {
+                               const val = parseFloat(e.target.value);
+                               updateItem(selectedIds[0], 'width', isNaN(val) ? 1 : val);
+                             }} 
                            />
                            <TextField 
                              label={targetItem?.type === 'line' ? '두께(H)' : '높이(H)'} 
                              type="number" 
                              size="small" 
                              value={targetItem?.height || 0} 
-                             onChange={(e) => updateItem(selectedIds[0], 'height', parseFloat(e.target.value))} 
+                             onChange={(e) => {
+                               const val = parseFloat(e.target.value);
+                               updateItem(selectedIds[0], 'height', isNaN(val) ? 1 : val);
+                             }} 
                            />
                          </>
                        )}
@@ -1402,7 +1560,7 @@ const LabelDesignPage = () => {
                      </FormControl>
                    )}
                    
-                   {/* 텍스트 요소일 때 노출되는 폰트 제어 영역 (크기, 볼드, 이탤릭) */}
+                   {/* 텍스트 요소 전용: 폰트 사이즈 및 스타일 제어 */}
                    {['text', 'data', 'date'].includes(targetItem?.type) && (
                      <MuiPaper 
                        variant="outlined" 
@@ -1421,13 +1579,20 @@ const LabelDesignPage = () => {
                             type="number" 
                             size="small" 
                             value={targetItem?.fontSize || 12} 
-                            onChange={(e) => updateItem(selectedIds[0], 'fontSize', parseInt(e.target.value))} 
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              updateItem(selectedIds[0], 'fontSize', isNaN(val) ? 8 : val);
+                            }} 
                           />
                           <Tooltip title="굵게 (Bold)">
                             <IconButton 
                               size="small"
                               color={targetItem?.fontWeight === 'bold' ? 'primary' : 'default'} 
-                              onClick={() => updateItem(selectedIds[0], 'fontWeight', targetItem?.fontWeight === 'bold' ? 'normal' : 'bold')}
+                              onClick={() => updateItem(
+                                selectedIds[0], 
+                                'fontWeight', 
+                                targetItem?.fontWeight === 'bold' ? 'normal' : 'bold'
+                              )}
                             >
                               <FormatBoldIcon fontSize="small" />
                             </IconButton>
@@ -1436,7 +1601,11 @@ const LabelDesignPage = () => {
                             <IconButton 
                               size="small"
                               color={targetItem?.fontStyle === 'italic' ? 'primary' : 'default'} 
-                              onClick={() => updateItem(selectedIds[0], 'fontStyle', targetItem?.fontStyle === 'italic' ? 'normal' : 'italic')}
+                              onClick={() => updateItem(
+                                selectedIds[0], 
+                                'fontStyle', 
+                                targetItem?.fontStyle === 'italic' ? 'normal' : 'italic'
+                              )}
                             >
                               <FormatItalicIcon fontSize="small" />
                             </IconButton>
@@ -1445,6 +1614,7 @@ const LabelDesignPage = () => {
                      </MuiPaper>
                    )}
 
+                   {/* 데이터형 개체 전용: 데이터 앞단에 고정 출력되는 문자열 세팅 */}
                    {['data', 'date'].includes(targetItem?.type) && (
                      <TextField 
                        label="바코드 접두어(Prefix)" 
@@ -1454,16 +1624,32 @@ const LabelDesignPage = () => {
                      />
                    )}
 
-                   <TextField 
-                     label="Content (내용)" 
-                     size="small" 
-                     multiline 
-                     minRows={2}
-                     value={targetItem?.content || ''} 
-                     onChange={(e) => updateItem(selectedIds[0], 'content', e.target.value)} 
-                   />
+                   {/* ★ 핵심 추가 로직: 바코드/QR코드일 경우 조합된 최종 데이터(codeDataWithPrefix)를 읽기 전용으로 화면에 표시 */}
+                   {['barcode', 'qrcode'].includes(targetItem?.type) ? (
+                     <TextField 
+                       label="조합된 데이터 (자동 미리보기)"
+                       size="small" 
+                       multiline 
+                       minRows={2}
+                       value={codeDataWithPrefix}
+                       InputProps={{
+                         readOnly: true
+                       }}
+                       helperText="다른 데이터/날짜 요소들의 조합으로 자동 생성됩니다."
+                     />
+                   ) : (
+                     <TextField 
+                       label="Content (내용)"
+                       size="small" 
+                       multiline 
+                       minRows={2}
+                       value={targetItem?.content || ''} 
+                       onChange={(e) => updateItem(selectedIds[0], 'content', e.target.value)} 
+                     />
+                   )}
                  </>
                )}
+               
                <Button 
                  variant="contained" 
                  color="error" 
@@ -1491,27 +1677,28 @@ const LabelDesignPage = () => {
                   type="number" 
                   size="small" 
                   value={layout.labelW} 
-                  onChange={(e) => setLayout({...layout, labelW: e.target.value})} 
+                  onChange={(e) => setLayout({ ...layout, labelW: e.target.value })} 
                 />
                 <TextField 
                   label="라벨 높이(mm)" 
                   type="number" 
                   size="small" 
                   value={layout.labelH} 
-                  onChange={(e) => setLayout({...layout, labelH: e.target.value})} 
+                  onChange={(e) => setLayout({ ...layout, labelH: e.target.value })} 
                 />
               </Stack>
               <TextField 
                 label="데이터 구분자" 
                 size="small" 
                 value={layout.delimiter} 
-                onChange={(e) => setLayout({...layout, delimiter: e.target.value})} 
+                onChange={(e) => setLayout({ ...layout, delimiter: e.target.value })} 
               />
             </Stack>
           )}
         </Box>
         <Divider />
-        {/* 레이어 목록 */}
+        
+        {/* 4. 우측 하단 레이어 목록 */}
         <Box 
           sx={{ 
             p:               2, 
@@ -1539,7 +1726,10 @@ const LabelDesignPage = () => {
               axis="y" 
               values={items} 
               onReorder={setItems} 
-              style={{ listStyle: 'none', padding: 0 }}
+              style={{ 
+                listStyle: 'none', 
+                padding:   0 
+              }}
             >
               {items.map((item) => (
                 <Reorder.Item 
@@ -1567,7 +1757,10 @@ const LabelDesignPage = () => {
                     />
                     <Typography 
                       variant="caption" 
-                      sx={{ flex: 1, fontWeight: 'bold' }}
+                      sx={{ 
+                        flex:       1, 
+                        fontWeight: 'bold' 
+                      }}
                     >
                       {item.label}
                     </Typography>
@@ -1591,7 +1784,7 @@ const LabelDesignPage = () => {
         </Box>
       </Box>
 
-      {/* 디자인 불러오기 다이얼로그 */}
+      {/* 디자인 서버 로드 모달 다이얼로그 */}
       <Dialog 
         open={openDbDialog} 
         onClose={() => setOpenDbDialog(false)} 

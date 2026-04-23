@@ -1,4 +1,4 @@
-USE REACT_BASE
+USE REACT_LABEL_DB
 GO
 
 -- 사용자 테이블

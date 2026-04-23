@@ -1,36 +1,44 @@
 /**
  * @file        init-admin.js
- * @description 초기 관리자 계정 생성을 위한 독립 실행형 시딩 스크립트
+ * @description 라벨 시스템 초기 관리자 계정 생성을 위한 독립 실행형 시딩 스크립트
+ * (비밀번호 암호화 로직을 포함하며, 중복 생성을 방지합니다.)
  */
 
-const { poolPromise, sql } = require('./config/db'); // DB 연결 경로 확인
+const { poolPromise, sql } = require('./config/db'); // 설정된 DB 연결 객체 호출
 const bcrypt = require('bcrypt');
 
+/** [설정] 초기 계정 정보 */
+const ADMIN_CONFIG = {
+    userId:   'ADMIN',
+    userPw:   'ADMIN',      // 초기 접속 후 변경 권장
+    userName: '관리자',
+    role:     'ADMIN'      // TB_USER 테이블의 권한 코드
+};
+
+const saltRounds = 10;
+
 const seedAdmin = async () => {
-    const adminId = 'ADMIN'.toUpperCase();
-    const adminPw = 'ADMIN'.toUpperCase(); // 초기 비밀번호
-    const saltRounds = 10;
-
     try {
-        console.log('--- 관리자 계정 생성 시작 ---');
+        console.log('------------------------------------------');
+        console.log('라벨 시스템 관리자 계정 생성을 시작합니다.');
+        console.log('------------------------------------------');
 
-        // 1. 비밀번호 해싱 (애플리케이션과 동일한 로직)
-        const hashedPassword = await bcrypt.hash(adminPw, saltRounds);
+        // 1. 비밀번호 해싱 (bcrypt 사용)
+        const hashedPassword = await bcrypt.hash(ADMIN_CONFIG.userPw, saltRounds);
 
         const pool = await poolPromise;
         
-        // 2. TB_MEMBERS 테이블에 삽입 (아이디 중복 체크 포함)
+        // 2. TB_USER 테이블에 삽입 (UserId 중복 체크 포함)
         const result = await pool.request()
-            .input('MEMBER_ID', sql.NVarChar, adminId)
-            .input('MEMBER_NAME', sql.NVarChar, '관리자')
-            .input('DEPARTMENT', sql.NVarChar, 'ADMINISTRATOR') // 공통코드와 일치 필요
-            .input('MEMBER_PASSWORD', sql.NVarChar, hashedPassword)
-            .input('MEMBER_ROLE', sql.NVarChar, 'ADMINISTRATOR')
+            .input('UserId',   sql.VarChar,  ADMIN_CONFIG.userId)
+            .input('UserPwd',  sql.VarChar,  hashedPassword)
+            .input('UserName', sql.NVarChar, ADMIN_CONFIG.userName)
+            .input('Role',     sql.VarChar,  ADMIN_CONFIG.role)
             .query(`
-                IF NOT EXISTS (SELECT 1 FROM TB_MEMBERS WHERE MEMBER_ID = @MEMBER_ID)
+                IF NOT EXISTS (SELECT 1 FROM TB_USER WHERE UserId = @UserId)
                 BEGIN
-                    INSERT INTO TB_MEMBERS (MEMBER_ID, MEMBER_NAME, DEPARTMENT, MEMBER_PASSWORD, MEMBER_ROLE)
-                    VALUES (@MEMBER_ID, @MEMBER_NAME, @DEPARTMENT, @MEMBER_PASSWORD, @MEMBER_ROLE);
+                    INSERT INTO TB_USER (UserId, UserPwd, UserName, Role, IsActive, CreatedAt)
+                    VALUES (@UserId, @UserPwd, @UserName, @Role, 'Y', GETDATE());
                     SELECT 'SUCCESS' AS STATUS;
                 END
                 ELSE
@@ -40,20 +48,22 @@ const seedAdmin = async () => {
             `);
 
         const status = result.recordset[0].STATUS;
+
         if (status === 'SUCCESS') {
-            console.log('관리자 계정이 생성되었습니다.');
-            console.log(`아이디: ${adminId} / 비밀번호: ${adminPw}`);
+            console.log('성공: 관리자 계정이 생성되었습니다.');
+            console.log(`ID: ${ADMIN_CONFIG.userId}`);
+            console.log(` PW: ${ADMIN_CONFIG.userPw}`);
         } else {
-            console.log('ℹ이미 관리자 계정이 존재합니다.');
+            console.log('알림: 이미 관리자 계정(' + ADMIN_CONFIG.userId + ')이 DB에 존재합니다.');
         }
 
     } catch (err) {
-        console.error('관리자 생성 중 에러 발생:', err.message);
+        console.error('에러 발생:', err.message);
     } finally {
+        console.log('------------------------------------------');
+        // 스크립트 종료
         process.exit();
     }
 };
 
 seedAdmin();
-
-/*node init-admin.js*/

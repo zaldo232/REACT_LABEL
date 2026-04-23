@@ -1,7 +1,6 @@
 /**
  * @file        BarcodeHistoryPage.jsx
  * @description 라벨 발행 및 스캔 이력을 조회하는 페이지 컴포넌트
- * (선택한 양식에 따라 컬럼이 동적으로 생성되며, KST 기준 날짜 필터링, 다크모드 및 외부 스크롤 잠금을 지원합니다.)
  */
 
 import React, { useState, useEffect, useMemo } from 'react';

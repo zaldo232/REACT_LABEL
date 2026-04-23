@@ -1,4 +1,4 @@
-USE [REACT_BASE]
+USE REACT_LABEL_DB
 GO
 
 -- 1. 채번 테이블 초기화 (BARCODE와 LABEL 둘 다 넣어줘야 함)

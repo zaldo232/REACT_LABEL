@@ -3,7 +3,7 @@
  * @description	사용자 인증 및 권한 관련 저장 프로시저(Stored Procedure) 모음
  */
 
-USE [REACT_BASE]
+USE REACT_LABEL_DB
 GO
 
 /* ==========================================================================
