@@ -98,7 +98,7 @@ const createAppTheme = (isDarkMode) => {
             boxShadow: isDarkMode 
               ? '0 10px 15px -3px rgba(0, 0, 0, 0.5)' 
               : '0 4px 6px -1px rgba(0, 0, 0, 0.05)',
-            borderRadius: 12,
+            borderRadius: 0,
           },
         },
       },

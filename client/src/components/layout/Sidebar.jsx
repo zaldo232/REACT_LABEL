@@ -256,7 +256,7 @@ const Sidebar = ({
               height: 20,
               fontSize: '0.6rem',
               fontWeight: 'bold',
-              // ★ 핵심 해결: DISCONNECTED (default) 일 때 까맣게 묻히지 않도록 반투명 흰색 바탕 강제 적용
+              // 핵심 해결: DISCONNECTED (default) 일 때 까맣게 묻히지 않도록 반투명 흰색 바탕 강제 적용
               ...(!isScannerConnected && {
                 backgroundColor: 'rgba(255, 255, 255, 0.15)',
                 color: '#ffffff',
