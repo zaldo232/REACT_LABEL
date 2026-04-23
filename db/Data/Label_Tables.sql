@@ -63,3 +63,15 @@ CREATE TABLE TB_LABEL_PRINT_HISTORY (
     CreatedAt       DATETIME DEFAULT GETDATE() -- 발행 일시
 );
 GO
+
+-- 바코드 스캔 이력 테이블 (하드웨어 스캔 기록 전용)
+CREATE TABLE TB_BARCODE_SCAN_HISTORY (
+    ScanSeq         INT IDENTITY(1,1) PRIMARY KEY
+    , BatchNo       VARCHAR(50) NOT NULL            --  스캔 묶음 번호
+    , Barcode       VARCHAR(100) NOT NULL           --  스캔된 바코드 원문
+    , JsonData      NVARCHAR(MAX)                   --  파싱된 항목 데이터 (JSON)
+    , TemplateId    INT                             --  스캔 시 사용한 양식 ID
+    , UserId        VARCHAR(50) NOT NULL            --  스캔 작업자 ID 
+    , CreatedAt     DATETIME DEFAULT GETDATE()      --  스캔 일시
+);
+GO

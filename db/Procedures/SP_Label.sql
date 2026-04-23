@@ -375,3 +375,110 @@ BEGIN
 		END
 END
 GO
+
+/* ==========================================================================
+ * 프로그램명 : UP_INSERT_BARCODE_SCANS
+ * 설명       : 스캔된 바코드 리스트 일괄 저장 (독립 채번 로직 내장)
+ * ========================================================================== */
+CREATE OR ALTER PROCEDURE [dbo].[UP_INSERT_BARCODE_SCANS]
+	@UserId					VARCHAR(50)
+,	@TemplateId				INT				=	NULL
+,	@JsonData				NVARCHAR(MAX)
+AS
+BEGIN
+	SET NOCOUNT ON;
+
+	-- [변수 선언] 채번용
+	DECLARE	@Today			VARCHAR(8)	= CONVERT(VARCHAR(8), GETDATE(), 112);
+	DECLARE	@NewSeq			INT;
+	DECLARE	@BatchNo		VARCHAR(50);
+	
+	BEGIN TRY
+		BEGIN TRAN;
+
+		-- 1. 'SCAN' 타입의 채번 데이터가 없으면 최초 1회 생성
+		IF NOT EXISTS (SELECT 1 FROM TB_COM_SEQ WITH (NOLOCK) WHERE SeqType = 'SCAN')
+		BEGIN
+			INSERT INTO TB_COM_SEQ (SeqType, LastDate, LastSeq, UpdDate) 
+			VALUES ('SCAN', @Today, 0, GETDATE());
+		END
+
+		-- 2. 채번 테이블 업데이트 (기존 UP_INSERT_LABEL_PRINT 와 동일한 방식)
+		UPDATE	TB_COM_SEQ
+		SET		@NewSeq		= CASE WHEN LastDate = @Today THEN LastSeq + 1 ELSE 1 END
+		,		LastSeq		= CASE WHEN LastDate = @Today THEN LastSeq + 1 ELSE 1 END
+		,		LastDate	= @Today
+		,		UpdDate		= GETDATE()
+		WHERE	SeqType		= 'SCAN';
+
+		-- 3. BatchNo 문자열 조립 (예: S001_20260423)
+		SET @BatchNo = 'S' + RIGHT('000' + CAST(@NewSeq AS VARCHAR(10)), 3) + '_' + @Today;
+
+		-- 4. 실제 바코드 스캔 데이터 저장
+		INSERT INTO TB_BARCODE_SCAN_HISTORY 
+		(
+				BatchNo
+		,		Barcode
+		,		JsonData
+		,		TemplateId
+		,		UserId
+		,		CreatedAt
+		)
+		SELECT	@BatchNo
+		,		JSON_VALUE(value, '$.barcode')
+		,		value
+		,		@TemplateId
+		,		@UserId
+		,		GETDATE()
+		FROM	OPENJSON(@JsonData);
+
+		COMMIT TRAN;
+
+		-- 5. 성공 시 클라이언트에게 BatchNo 반환
+		SELECT @BatchNo AS GeneratedBatchNo;
+			
+	END TRY
+	BEGIN CATCH
+		IF (@@TRANCOUNT > 0)
+			ROLLBACK TRAN;
+			
+		THROW;
+	END CATCH
+END
+GO
+
+/* ==========================================================================
+ * 프로그램명 : UP_SELECT_BARCODE_HISTORY
+ * ========================================================================== */
+CREATE OR ALTER PROCEDURE [dbo].[UP_SELECT_BARCODE_HISTORY]
+	@StartDate				VARCHAR(8)
+,	@EndDate				VARCHAR(8)
+,	@Barcode				VARCHAR(100)	=	NULL
+,	@UserId					VARCHAR(50)		=	NULL
+AS
+BEGIN
+	SET NOCOUNT ON;
+
+	SELECT		H.ScanSeq
+	,			H.BatchNo
+	,			H.Barcode
+	,			H.JsonData
+	,			H.TemplateId
+	,			T.TemplateName
+	,			H.UserId
+	,			U.UserName
+	,			FORMAT(H.CreatedAt, 'yyyy-MM-dd HH:mm:ss') AS ScanAt
+	FROM		TB_BARCODE_SCAN_HISTORY	H	WITH (NOLOCK)
+	LEFT JOIN	TB_USER					U	WITH (NOLOCK)	ON	U.UserId		=	H.UserId
+	LEFT JOIN	TB_LABEL_TEMPLATE		T	WITH (NOLOCK)	ON	T.TemplateId	=	H.TemplateId
+	WHERE		H.CreatedAt		>=	CAST(@StartDate AS DATETIME)
+	AND			H.CreatedAt		<	DATEADD(DAY, 1, CAST(@EndDate AS DATETIME))
+	AND			(
+					@Barcode IS NULL 
+					OR H.Barcode LIKE '%' + @Barcode + '%'
+					OR H.JsonData LIKE '%' + @Barcode + '%'
+				)
+	AND			(@UserId IS NULL OR H.UserId = @UserId)
+	ORDER BY	H.ScanSeq DESC;
+END
+GO

@@ -63,7 +63,7 @@ router.delete(
 /** [출력 이력 관리] */
 
 /**
- * 라벨 출력 및 스캔 데이터 이력 저장
+ * 라벨 출력 데이터 이력 저장
  * (POST /api/label/save)
  */
 router.post(

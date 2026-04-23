@@ -53,15 +53,12 @@ const BarcodeScanPage = () => {
     isScannerConnected 
   } = useAppStore();
 
-  /** [영역 분리: Ref 관리] 
-   * 마지막으로 처리된 스캔 시간 타임스탬프
-   * (React 렌더링 사이클에 의한 중복 처리 방지 및 초기 진입 시 과거 스캔 데이터 무시)
-   */
+  /** [영역 분리: Ref 관리] */
   const lastProcessedTime = useRef(Date.now());
 
   /** [영역 분리: 부수 효과 (Effects)] */
-
-  /** 컴포넌트 마운트 시 서버로부터 라벨 양식 목록 로드 */
+  
+  // 1. 컴포넌트 마운트 시 양식 목록 로드
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
@@ -74,66 +71,62 @@ const BarcodeScanPage = () => {
     fetchTemplates();
   }, []);
 
-  /** * 실시간 바코드 스캔 감지 및 자동 파싱 처리 
-   * (Zustand 스토어의 lastScan 객체가 업데이트될 때마다 실행)
-   */
+  // 2. ★ [핵심 수정됨] 실시간 바코드 스캔 감지 로직
   useEffect(() => {
-    /** ★ 핵심 수정: 옵셔널 체이닝(?.)을 사용하여 lastScan이 undefined일 경우의 충돌 방지 */
-    if (lastScan?.barcode && lastScan?.timestamp > lastProcessedTime.current) {
-      
-      // 1. 중복 실행 방지를 위해 최근 처리 시간 갱신
-      lastProcessedTime.current = lastScan.timestamp;
+    // 값이 없거나, 이미 처리한 과거의 데이터라면 즉시 종료 (경고창도 안 띄움)
+    if (!lastScan || !lastScan.barcode || lastScan.timestamp <= lastProcessedTime.current) {
+      return; 
+    }
 
-      // 2. 양식 미선택 시 경고 및 로직 중단
-      if (!selectedTemplateId) {
-        showAlert("양식 미선택", "warning", "상단에서 라벨 양식을 먼저 선택해주세요.");
-        return;
+    // 데이터가 컴포넌트까지 잘 넘어왔는지 개발자 도구(F12) 콘솔에서 확인하기 위한 로그
+    console.log("📥 [스캔 데이터 수신됨]:", lastScan.barcode);
+
+    // 새로운 데이터임이 확인되었으므로, 다음 중복 방지를 위해 처리 시간 즉시 갱신
+    lastProcessedTime.current = lastScan.timestamp;
+
+    // 양식을 선택하지 않았다면 파싱을 진행할 수 없으므로 경고창 띄우고 중단
+    if (!selectedTemplateId) {
+      showAlert("양식 미선택", "warning", "스캔을 진행하기 전에 상단에서 라벨 양식을 먼저 선택해주세요.");
+      return;
+    }
+    
+    // 정상적으로 파싱 로직 진행
+    const parts = lastScan.barcode.split(currentDelimiter);
+    const updatedMeta = { ...metaData };
+
+    templateItems.forEach((item, index) => {
+      if (parts[index]) {
+        updatedMeta[item.label] = parts[index];
       }
-      
-      // 3. 설정된 구분자(Delimiter)로 스캔된 바코드 문자열을 배열로 분할
-      const parts = lastScan.barcode.split(currentDelimiter);
-      const updatedMeta = { ...metaData };
+    });
 
-      // 4. 분할된 문자열을 순서대로 양식의 가변 데이터 필드에 매핑
-      templateItems.forEach((item, index) => {
-        if (parts[index]) {
-          updatedMeta[item.label] = parts[index];
-        }
-      });
+    setMetaData(updatedMeta);
 
-      // 5. 파싱 결과를 UI에 반영
-      setMetaData(updatedMeta);
-
-      // 6. 데이터 그리드에 삽입할 신규 스캔 데이터 객체 생성
+    // 상태 업데이트 시 prev를 사용하여 scannedList를 의존성 배열에서 제거 (무한 렌더링 및 엇박자 방지)
+    setScannedList((prev) => {
       const newEntry = {
         id: lastScan.timestamp,
-        no: scannedList.length + 1,
+        no: prev.length + 1, // 기존 목록 길이에 1을 더해 고유 번호 부여
         barcode: lastScan.barcode,
         scannedAt: new Date(lastScan.timestamp).toLocaleTimeString(),
         operator: user?.userName || '관리자',
         templateId: selectedTemplateId,
         ...updatedMeta 
       };
+      return [newEntry, ...prev];
+    });
 
-      // 7. 스캔 목록 최상단에 새 데이터 추가
-      setScannedList((prev) => [newEntry, ...prev]);
-    }
   }, [
-    lastScan, 
+    lastScan,             // 전역 스토어의 스캔 데이터가 바뀔 때마다 반응
     user, 
     metaData, 
     selectedTemplateId, 
     templateItems, 
-    currentDelimiter, 
-    scannedList.length
+    currentDelimiter
+    // scannedList.length는 더 이상 의존성에 필요 없음
   ]);
 
   /** [영역 분리: 이벤트 핸들러] */
-
-  /**
-   * 라벨 양식 선택 변경 처리
-   * @param {Object} e - Select 이벤트 객체
-   */
   const handleTemplateChange = (e) => {
     const tId = e.target.value;
     setSelectedTemplateId(tId);
@@ -142,15 +135,12 @@ const BarcodeScanPage = () => {
     if (target) {
       const fullDesign = JSON.parse(target.DesignJson || '[]');
       
-      // 메타 정보에서 바코드 결합 구분자(Delimiter) 추출
       const metaItem = fullDesign.find(i => i.type === 'meta');
       setCurrentDelimiter(metaItem?.layout?.delimiter || '_');
 
-      // 'data' 타입의 항목들만 필터링하여 동적 입력 필드 목록 생성
       const dataFields = fullDesign.filter(item => item.type === 'data');
       setTemplateItems(dataFields);
       
-      // 항목별 데이터 빈 문자열로 초기화
       const initialMeta = {};
       dataFields.forEach(f => {
         initialMeta[f.label] = '';
@@ -159,9 +149,6 @@ const BarcodeScanPage = () => {
     }
   };
 
-  /**
-   * 항목 데이터 변경 핸들러 (ReadOnly 상태 보조)
-   */
   const handleMetaChange = (label, value) => {
     setMetaData(prev => ({ 
       ...prev, 
@@ -170,20 +157,13 @@ const BarcodeScanPage = () => {
   };
 
   /** [영역 분리: 비즈니스 로직] */
-
-  /**
-   * 한국 시간(KST) 문자열 변환
-   * @param {number} timestamp - 타임스탬프
-   */
   const getKstString = (timestamp) => {
     const date = new Date(timestamp);
     const kstDate = new Date(date.getTime() + (9 * 60 * 60 * 1000));
     return kstDate.toISOString().replace('T', ' ').substring(0, 19);
   };
 
-  /**
-   * 대기 중인 스캔 목록 서버 저장
-   */
+  /** 대기 중인 스캔 목록 서버 저장 */
   const handleSave = async () => {
     if (scannedList.length === 0) return;
 
@@ -195,7 +175,15 @@ const BarcodeScanPage = () => {
     if (isConfirmed) {
       try {
         const payload = scannedList.slice().reverse().map(item => {
-          const { id, no, scannedAt, operator, templateId, barcode, ...restData } = item;
+          const { 
+            id, 
+            no, 
+            scannedAt, 
+            operator, 
+            templateId, 
+            barcode, 
+            ...restData 
+          } = item;
           
           return {
             barcode: barcode,
@@ -204,8 +192,9 @@ const BarcodeScanPage = () => {
           };
         });
 
-        const response = await apiClient.post('/label/save', { 
-          labelData: payload, 
+        // 시스템 전용 스캔 저장 API 호출
+        const response = await apiClient.post('/system/scans', { 
+          scanData: payload, 
           templateId: selectedTemplateId 
         });
 
@@ -220,7 +209,7 @@ const BarcodeScanPage = () => {
     }
   };
 
-  /** * 데이터 그리드 컬럼 구성 */
+  /** [영역 분리: 데이터 그리드 컬럼] */
   const columns = useMemo(() => {
     const baseCols = [
       { 
@@ -263,7 +252,11 @@ const BarcodeScanPage = () => {
       },
     ];
 
-    return [...baseCols, ...dynamicCols, ...endCols];
+    return [
+      ...baseCols, 
+      ...dynamicCols, 
+      ...endCols
+    ];
   }, [templateItems]);
 
   /** [렌더링 영역] */
@@ -290,7 +283,9 @@ const BarcodeScanPage = () => {
       {!isScannerConnected && (
         <Alert 
           severity="warning" 
-          sx={{ mb: 1 }}
+          sx={{ 
+            mb: 1 
+          }}
         >
           장치 연결이 필요합니다. 좌측 사이드바 하단에서 <strong>[스캐너 연결]</strong>을 눌러주세요.
         </Alert>
@@ -312,9 +307,13 @@ const BarcodeScanPage = () => {
         >
           <FormControl 
             size="small" 
-            sx={{ width: 250 }}
+            sx={{ 
+              width: 250 
+            }}
           >
-            <InputLabel>라벨 양식 선택</InputLabel>
+            <InputLabel>
+              라벨 양식 선택
+            </InputLabel>
             <Select 
               value={selectedTemplateId} 
               label="라벨 양식 선택" 
@@ -336,7 +335,11 @@ const BarcodeScanPage = () => {
             flexItem 
           />
 
-          <Box sx={{ flex: 1 }}>
+          <Box 
+            sx={{ 
+              flex: 1 
+            }}
+          >
             <Typography 
               variant="caption" 
               color="primary" 
@@ -355,7 +358,9 @@ const BarcodeScanPage = () => {
                 <Typography 
                   variant="body2" 
                   color="text.secondary"
-                  sx={{ mt: 1 }}
+                  sx={{ 
+                    mt: 1 
+                  }}
                 >
                   양식을 선택하거나 가변 데이터가 있는 양식을 선택해주세요.
                 </Typography>
@@ -417,7 +422,9 @@ const BarcodeScanPage = () => {
             startIcon={<SaveIcon />} 
             onClick={handleSave} 
             disabled={scannedList.length === 0 || !selectedTemplateId}
-            sx={{ fontWeight: 'bold' }}
+            sx={{ 
+              fontWeight: 'bold' 
+            }}
           >
             서버 일괄 저장
           </Button>

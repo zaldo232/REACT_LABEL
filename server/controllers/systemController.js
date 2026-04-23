@@ -16,8 +16,10 @@ const systemController = {
   saveScans: async (req, res) => {
     try {
       /** [로직] 요청 데이터 및 세션 정보 추출 */
+      // 프론트엔드(BarcodeScanPage)에서 넘겨주는 templateId 추가 추출
       const { 
-        scanData 
+        scanData,
+        templateId 
       } = req.body;
 
       const userId = req.session.user?.userId;
@@ -39,11 +41,13 @@ const systemController = {
       }
 
       /** [로직] DB 저장용 JSON 문자열 변환 */
+      // 파싱된 상세 항목들이 모두 포함된 객체 배열을 그대로 직렬화
       const jsonDataString = JSON.stringify(scanData);
 
       /** [로직] DB 프로시저 실행 (UP_INSERT_BARCODE_SCANS) */
       const result = await executeProcedure('UP_INSERT_BARCODE_SCANS', {
         UserId: userId,
+        TemplateId: templateId ? parseInt(templateId) : null, // DB 프로시저에 양식 ID 전달
         JsonData: jsonDataString
       });
 

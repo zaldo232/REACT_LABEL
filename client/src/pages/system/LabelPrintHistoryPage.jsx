@@ -1,9 +1,13 @@
 /**
- * @file        BarcodeHistoryPage.jsx
- * @description 라벨 발행 및 스캔 이력을 조회하는 페이지 컴포넌트
+ * @file        LabelPrintHistoryPage.jsx
+ * @description 시스템에서 라벨 프린터로 실제 발행(인쇄)한 데이터를 조회하는 이력 페이지
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { 
+  useState, 
+  useEffect, 
+  useMemo 
+} from 'react';
 import { 
   Box, 
   Typography, 
@@ -23,22 +27,18 @@ import DataTable from '../../components/common/DataTable';
 import { showAlert } from '../../utils/swal';
 
 /**
- * [컴포넌트] BarcodeHistoryPage
+ * [컴포넌트] LabelPrintHistoryPage
  */
-const BarcodeHistoryPage = () => {
-  /** [영역 분리: 상태 관리 - 서버 데이터 및 조회 결과] */
-  const [history, setHistory] = useState([]);                       // 조회된 이력 데이터 목록
-  const [templates, setTemplates] = useState([]);                   // DB에서 로드한 양식(템플릿) 목록
-  const [selectedTemplateId, setSelectedTemplateId] = useState(''); // 선택된 양식 ID
-  const [dynamicColumns, setDynamicColumns] = useState([]);         // 양식에 따라 변하는 가변 컬럼들
-  const [loading, setLoading] = useState(false);                    // 데이터 로딩 상태 제어
+const LabelPrintHistoryPage = () => {
+  /** [영역 분리: 상태 관리] */
+  const [history, setHistory] = useState([]);
+  const [templates, setTemplates] = useState([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [dynamicColumns, setDynamicColumns] = useState([]);
+  const [loading, setLoading] = useState(false);
 
-  /** * [영역 분리: 상태 관리 - 조회 필터 파라미터] 
-   * @description 규칙에 따라 KST(한국 시간) 보정을 적용하여 1주일 전~오늘까지를 기본 날짜로 설정
-   */
   const [searchParams, setSearchParams] = useState(() => {
     const now = new Date();
-    // 한국 시간(UTC+9) 보정
     const kstNow = new Date(now.getTime() + (9 * 60 * 60 * 1000));
     const kstOneWeekAgo = new Date(kstNow.getTime() - (7 * 24 * 60 * 60 * 1000));
 
@@ -50,8 +50,6 @@ const BarcodeHistoryPage = () => {
   });
 
   /** [영역 분리: 부수 효과 (Effects)] */
-
-  /** 컴포넌트 마운트 시 라벨 양식 목록 로드 */
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
@@ -64,21 +62,14 @@ const BarcodeHistoryPage = () => {
     fetchTemplates();
   }, []);
 
-  /** [영역 분리: 이벤트 핸들러 및 비즈니스 로직] */
-
-  /**
-   * 이력 조회 실행 함수
-   * @description 선택된 양식 ID를 기준으로 서버 API를 호출하며, 응답 데이터의 Key를 분석해 동적 컬럼을 생성합니다.
-   */
+  /** [영역 분리: 이벤트 핸들러] */
   const fetchHistory = async () => {
-    // 1. 필수 선택값 검증
     if (!selectedTemplateId) {
       return showAlert("양식 미선택", "warning", "조회할 라벨 양식을 먼저 선택해주세요.");
     }
 
     setLoading(true);
     try {
-      // 2. 서버 API 호출 (동적 쿼리 기반 프로시저 호출)
       const response = await apiClient.get('/label/history', { 
         params: { 
           ...searchParams, 
@@ -90,10 +81,9 @@ const BarcodeHistoryPage = () => {
         const rawData = response.data.data;
 
         if (rawData && rawData.length > 0) {
-          /** [로직] 서버 응답 키(Key) 분석을 통한 동적 컬럼 생성 */
           const firstRow = rawData[0];
           
-          // 테이블에 표시하지 않을 시스템 고정 필드(Primary Key, FK 등) 목록
+          // 시스템 필드 제외
           const systemFields = [
             'PrintSeq', 
             'BatchNo', 
@@ -105,7 +95,7 @@ const BarcodeHistoryPage = () => {
           ];
           
           const generatedCols = Object.keys(firstRow)
-            .filter((key) => !systemFields.includes(key)) // 시스템 필드 제외
+            .filter((key) => !systemFields.includes(key))
             .map((key) => ({
               field: key,
               headerName: key,
@@ -115,8 +105,6 @@ const BarcodeHistoryPage = () => {
             }));
 
           setDynamicColumns(generatedCols);
-          
-          // 3. DataGrid 연동을 위한 ID 매핑 (PrintSeq를 고유 식별키로 활용)
           setHistory(
             rawData.map((item) => ({ 
               ...item, 
@@ -124,22 +112,19 @@ const BarcodeHistoryPage = () => {
             }))
           );
         } else {
-          // 데이터가 없을 경우 상태 초기화
           setHistory([]);
           setDynamicColumns([]);
           showAlert("조회 결과", "info", "해당 조건에 맞는 발행 이력이 존재하지 않습니다.");
         }
       }
     } catch (error) {
-      showAlert("조회 실패", "error", "서버로부터 데이터를 가져오는 중 오류가 발생했습니다.");
+      showAlert("조회 실패", "error", "데이터를 가져오는 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
   };
 
-  /** * [영역 분리: 데이터 그리드 컬럼 정의]
-   * @description 고정 컬럼과 분석된 동적 컬럼(dynamicColumns)을 합쳐 최종 DataGrid 컬럼을 구성합니다.
-   */
+  /** [영역 분리: 데이터 그리드 컬럼 정의] */
   const columns = useMemo(() => [
     { 
       field: 'PrintSeq', 
@@ -150,15 +135,15 @@ const BarcodeHistoryPage = () => {
     },
     { 
       field: 'BatchNo', 
-      headerName: '작업번호', 
+      headerName: '발행 묶음번호', 
       width: 180, 
       headerAlign: 'center', 
       align: 'center' 
     },
-    ...dynamicColumns, // 서버 응답에 따라 추가된 가변 데이터 컬럼 배열
+    ...dynamicColumns,
     { 
       field: 'Barcode', 
-      headerName: '바코드/시리얼', 
+      headerName: '인쇄된 바코드 원문', 
       flex: 1, 
       minWidth: 200, 
       headerAlign: 'center' 
@@ -179,7 +164,7 @@ const BarcodeHistoryPage = () => {
     },
   ], [dynamicColumns]);
 
-  /** [영역 분리: 렌더링 영역] */
+  /** [렌더링 영역] */
   return (
     <Box 
       sx={{ 
@@ -187,26 +172,22 @@ const BarcodeHistoryPage = () => {
         display: 'flex', 
         flexDirection: 'column', 
         gap: 2, 
-        // ★ 최상단 높이 고정 및 잠금으로 외부 스크롤 완벽 차단
         height: 'calc(100vh - 160px)',
         width: '100%',
         overflow: 'hidden' 
       }}
     >
-      {/* 1. 상단 타이틀 */}
       <Typography 
         variant="h5" 
         fontWeight="bold"
         color="text.primary"
       >
-        스캔 이력 조회
+        라벨 발행 이력 조회
       </Typography>
 
-      {/* 2. 필터 검색 영역 */}
       <Paper 
         sx={{ 
           p: 2.5, 
-          // 다크모드 대응 테마 배경 및 테두리 적용
           backgroundColor: 'background.paper', 
           border: '1px solid',
           borderColor: 'divider',
@@ -218,7 +199,6 @@ const BarcodeHistoryPage = () => {
           spacing={2} 
           alignItems="center"
         >
-          {/* 양식 선택 콤보박스 */}
           <FormControl 
             size="small" 
             sx={{ 
@@ -249,49 +229,35 @@ const BarcodeHistoryPage = () => {
             flexItem 
           />
 
-          {/* 시작일 설정 */}
           <TextField 
             label="시작일" 
             type="date" 
             size="small" 
             value={searchParams.startDate} 
             onChange={(e) => setSearchParams({ ...searchParams, startDate: e.target.value })} 
-            InputLabelProps={{ 
-              shrink: true 
-            }} 
-            sx={{ 
-              width: 155 
-            }} 
+            InputLabelProps={{ shrink: true }} 
+            sx={{ width: 155 }} 
           />
 
-          {/* 종료일 설정 */}
           <TextField 
             label="종료일" 
             type="date" 
             size="small" 
             value={searchParams.endDate} 
             onChange={(e) => setSearchParams({ ...searchParams, endDate: e.target.value })} 
-            InputLabelProps={{ 
-              shrink: true 
-            }} 
-            sx={{ 
-              width: 155 
-            }} 
+            InputLabelProps={{ shrink: true }} 
+            sx={{ width: 155 }} 
           />
 
-          {/* 바코드/내용 검색어 입력 */}
           <TextField 
             label="검색어" 
             size="small" 
             value={searchParams.barcode} 
             onChange={(e) => setSearchParams({ ...searchParams, barcode: e.target.value })} 
-            placeholder="바코드 또는 데이터 내용 검색" 
-            sx={{ 
-              flex: 1 
-            }} 
+            placeholder="바코드 또는 데이터 검색" 
+            sx={{ flex: 1 }} 
           />
           
-          {/* 조회 실행 버튼 */}
           <Button 
             variant="contained" 
             size="large" 
@@ -308,7 +274,6 @@ const BarcodeHistoryPage = () => {
         </Stack>
       </Paper>
 
-      {/* 3. 하단 데이터 그리드 영역 */}
       <Paper 
         sx={{ 
           flex: 1, 
@@ -328,4 +293,4 @@ const BarcodeHistoryPage = () => {
   );
 };
 
-export default BarcodeHistoryPage;
+export default LabelPrintHistoryPage;

@@ -14,12 +14,18 @@ import {
   Box, 
   Typography 
 } from '@mui/material';
+
+// 공통 레이아웃 및 인증 페이지
 import MainLayout from '../components/layout/MainLayout';
 import LoginPage from '../pages/auth/LoginPage';
+
+// 시스템 페이지 컴포넌트 임포트 (이력 조회 페이지 2개 분리 적용)
 import BarcodeScanPage from '../pages/system/BarcodeScanPage';
-import BarcodeHistoryPage from '../pages/system/BarcodeHistoryPage';
+import BarcodeScanHistoryPage from '../pages/system/BarcodeScanHistoryPage'; // 신규: 스캔 이력
 import LabelPrintPage from '../pages/system/LabelPrintPage'; 
+import LabelPrintHistoryPage from '../pages/system/LabelPrintHistoryPage';   // 변경: 발행 이력
 import LabelDesignPage from '../pages/system/LabelDesignPage';
+
 import useAppStore from '../store/useAppStore';
 
 const AppRoutes = () => {
@@ -31,7 +37,7 @@ const AppRoutes = () => {
     isInitialized 
   } = useAppStore();
 
-  /** [영역 분리: 로직]
+  /** [영역 분리: 비즈니스 로직]
    * 앱이 서버로부터 세션 정보를 아직 받아오는 중(초기화 전)이라면
    * 라우팅을 수행하지 않고 빈 화면을 유지하여 로그인 페이지로의 잘못된 튕김을 방지합니다.
    */
@@ -73,25 +79,31 @@ const AppRoutes = () => {
         
         {/* --- 시스템 관리 메뉴 영역 --- */}
         
-        {/* 바코드 스캔 페이지 */}
+        {/* 1) 실시간 바코드 스캔 페이지 */}
         <Route 
           path="system/scan" 
           element={<BarcodeScanPage />} 
         />
-        
-        {/* 스캔 이력 조회 페이지 */}
-        <Route 
-          path="system/history" 
-          element={<BarcodeHistoryPage />} 
-        />
-        
-        {/* 라벨 발행/인쇄 페이지 */}
+
+        {/* 2) 라벨 발행/인쇄 페이지 */}
         <Route 
           path="system/label-print" 
           element={<LabelPrintPage />} 
         />
         
-        {/* 라벨 디자인 도구 페이지 */}
+        {/* 3) 바코드 스캔 이력 조회 페이지 (분리됨) */}
+        <Route 
+          path="system/scan-history" 
+          element={<BarcodeScanHistoryPage />} 
+        />
+        
+        {/* 4) 라벨 발행 이력 조회 페이지 (분리됨) */}
+        <Route 
+          path="system/print-history" 
+          element={<LabelPrintHistoryPage />} 
+        />
+        
+        {/* 5) 라벨 디자인 도구 페이지 */}
         <Route 
           path="system/label-design" 
           element={<LabelDesignPage />} 

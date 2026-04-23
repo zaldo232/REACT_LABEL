@@ -26,6 +26,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import CableIcon from '@mui/icons-material/Cable';
 import PrintIcon from '@mui/icons-material/Print';
 import DesignServicesIcon from '@mui/icons-material/DesignServices';
+import HistoryIcon from '@mui/icons-material/History';
 import {
   useLocation,
   useNavigate
@@ -102,8 +103,13 @@ const Sidebar = ({
       icon: <PrintIcon />
     },
     {
-      title: '스캔 이력 조회',
-      path: '/system/history',
+      title: '바코드 스캔 이력',
+      path: '/system/scan-history',
+      icon: <HistoryIcon />
+    },
+    {
+      title: '라벨 발행 이력',
+      path: '/system/print-history',
       icon: <SearchIcon />
     },
     {
@@ -135,7 +141,6 @@ const Sidebar = ({
         '& .MuiDrawer-paper': {
           width: drawerWidth,
           boxSizing: 'border-box',
-          // 사이드바는 테마와 무관하게 항상 어두운 배경이므로 고정 색상 적용
           backgroundColor: (theme) => theme.palette?.layout?.sidebar?.background || '#233044',
           color: (theme) => theme.palette?.layout?.sidebar?.font || '#eeeeee',
           display: 'flex',
@@ -144,10 +149,8 @@ const Sidebar = ({
         },
       }}
     >
-      {/* 레이아웃 상단 헤더 공간 확보 */}
       <Toolbar />
 
-      {/* 상단: 메뉴 내비게이션 리스트 */}
       <Box
         sx={{
           flexGrow: 1,
@@ -180,7 +183,7 @@ const Sidebar = ({
                 >
                   <ListItemIcon
                     sx={{
-                      color: isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.6)', // 아이콘 색상 대비 확보
+                      color: isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.6)',
                       minWidth: 40
                     }}
                   >
@@ -192,7 +195,7 @@ const Sidebar = ({
                     primaryTypographyProps={{
                       fontSize: '0.9rem',
                       fontWeight: isSelected ? 'bold' : 'normal',
-                      color: isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.85)' // 텍스트 색상 대비 확보
+                      color: isSelected ? '#ffffff' : 'rgba(255, 255, 255, 0.85)'
                     }}
                   />
                 </ListItemButton>
@@ -202,14 +205,12 @@ const Sidebar = ({
         </List>
       </Box>
 
-      {/* 하단 제어부 구분을 위한 Divider */}
       <Divider
         sx={{
           backgroundColor: 'rgba(255, 255, 255, 0.1)'
         }}
       />
 
-      {/* 하단: 장치 상태 및 스캐너 제어 패널 */}
       <Box
         sx={{
           p: 2,
@@ -229,7 +230,6 @@ const Sidebar = ({
           DEVICE STATUS
         </Typography>
 
-        {/* 현재 스캐너 상태 표시 칩 */}
         <Box
           sx={{
             display: 'flex',
@@ -241,7 +241,7 @@ const Sidebar = ({
           <Typography
             variant="body2"
             sx={{
-              color: '#ffffff', // ★ 명시적 흰색 적용
+              color: '#ffffff',
               fontSize: '0.85rem'
             }}
           >
@@ -256,7 +256,6 @@ const Sidebar = ({
               height: 20,
               fontSize: '0.6rem',
               fontWeight: 'bold',
-              // 핵심 해결: DISCONNECTED (default) 일 때 까맣게 묻히지 않도록 반투명 흰색 바탕 강제 적용
               ...(!isScannerConnected && {
                 backgroundColor: 'rgba(255, 255, 255, 0.15)',
                 color: '#ffffff',
@@ -266,7 +265,6 @@ const Sidebar = ({
           />
         </Box>
 
-        {/* 연결/해제 토글 버튼 */}
         <Button
           fullWidth
           size="small"

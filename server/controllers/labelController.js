@@ -185,8 +185,8 @@ const labelController = {
   },
 
   /**
-   * [메소드] 통합 데이터 저장 (발행 이력 및 스캔 데이터 저장)
-   * @description 실제 라벨을 인쇄하거나 바코드를 등록할 때 호출되어 이력을 기록
+   * [메소드] 통합 데이터 저장 (발행 이력 데이터 저장)
+   * @description 실제 라벨을 인쇄할 때 호출되어 출력 이력을 기록
    */
   saveLabelData: async (req, res) => {
     try {
