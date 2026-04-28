@@ -1,6 +1,8 @@
 /**
  * @file        LabelPrintHistoryPage.jsx
  * @description 시스템에서 라벨 프린터로 실제 발행(인쇄)한 데이터를 조회하는 이력 페이지
+ * - [수정] 양식 로드 시 표(Table) 내부에 있는 가변 데이터 필드도 렌더링 컬럼에 포함되도록 확장 지원
+ * - [버그수정] 백엔드에서 받은 문자열 형식의 JsonData를 파싱하여, 표 내부의 동적 컬럼까지 모두 그리드에 표시되도록 객체 병합(Merge) 로직 추가
  */
 
 import React, { 
@@ -44,8 +46,8 @@ const LabelPrintHistoryPage = () => {
 
     return {
       startDate: kstOneWeekAgo.toISOString().split('T')[0],
-      endDate: kstNow.toISOString().split('T')[0],
-      barcode: ''
+      endDate:   kstNow.toISOString().split('T')[0],
+      barcode:   ''
     };
   });
 
@@ -81,9 +83,30 @@ const LabelPrintHistoryPage = () => {
         const rawData = response.data.data;
 
         if (rawData && rawData.length > 0) {
-          const firstRow = rawData[0];
           
-          // 시스템 필드 제외
+          /** [핵심 로직] JsonData 문자열을 파싱하여 객체 데이터로 병합 */
+          const processedData = rawData.map(item => {
+            let parsed = {};
+            // 백엔드에서 반환하는 JSON 필드명(JsonData 또는 PrintData 등)에 맞게 파싱 시도
+            const targetJsonField = item.JsonData || item.PrintData; 
+            if (targetJsonField) {
+              try {
+                 parsed = JSON.parse(targetJsonField);
+              } catch (e) {
+                 console.error("JSON 파싱 오류", e);
+              }
+            }
+            return {
+              ...item,
+              ...parsed,
+              id: item.PrintSeq // DataGrid 고유 식별자 설정
+            };
+          });
+
+          // 병합된 첫 번째 행을 기준으로 동적 컬럼 생성
+          const firstRow = processedData[0];
+          
+          // 시스템(고정) 필드 제외 처리
           const systemFields = [
             'PrintSeq', 
             'BatchNo', 
@@ -91,26 +114,26 @@ const LabelPrintHistoryPage = () => {
             'UserName', 
             'PrintedAt', 
             'id', 
-            'TemplateId'
+            'TemplateId',
+            'TemplateName',
+            'JsonData',
+            'PrintData',
+            'scannedAt'
           ];
           
+          // ★ 표 데이터까지 파싱되어 병합된 키 값을 동적 컬럼으로 자동 생성
           const generatedCols = Object.keys(firstRow)
             .filter((key) => !systemFields.includes(key))
             .map((key) => ({
-              field: key,
-              headerName: key,
-              width: 140,
+              field:       key,
+              headerName:  key,
+              width:       140,
               headerAlign: 'center',
-              align: 'center'
+              align:       'center'
             }));
 
           setDynamicColumns(generatedCols);
-          setHistory(
-            rawData.map((item) => ({ 
-              ...item, 
-              id: item.PrintSeq 
-            }))
-          );
+          setHistory(processedData);
         } else {
           setHistory([]);
           setDynamicColumns([]);
@@ -127,39 +150,39 @@ const LabelPrintHistoryPage = () => {
   /** [영역 분리: 데이터 그리드 컬럼 정의] */
   const columns = useMemo(() => [
     { 
-      field: 'PrintSeq', 
-      headerName: 'No', 
-      width: 70, 
-      align: 'center', 
+      field:       'PrintSeq', 
+      headerName:  'No', 
+      width:       70, 
+      align:       'center', 
       headerAlign: 'center' 
     },
     { 
-      field: 'BatchNo', 
-      headerName: '발행 묶음번호', 
-      width: 180, 
+      field:       'BatchNo', 
+      headerName:  '발행 묶음번호', 
+      width:       180, 
       headerAlign: 'center', 
-      align: 'center' 
+      align:       'center' 
     },
-    ...dynamicColumns,
+    ...dynamicColumns, // 표 셀 파싱 데이터가 포함된 동적 컬럼 렌더링
     { 
-      field: 'Barcode', 
-      headerName: '인쇄된 바코드 원문', 
-      flex: 1, 
-      minWidth: 200, 
+      field:       'Barcode', 
+      headerName:  '인쇄된 바코드 원문', 
+      flex:        1, 
+      minWidth:    200, 
       headerAlign: 'center' 
     },
     { 
-      field: 'UserName', 
-      headerName: '담당자', 
-      width: 120, 
-      align: 'center', 
+      field:       'UserName', 
+      headerName:  '담당자', 
+      width:       120, 
+      align:       'center', 
       headerAlign: 'center' 
     },
     { 
-      field: 'PrintedAt', 
-      headerName: '발행 일시', 
-      width: 180, 
-      align: 'center', 
+      field:       'PrintedAt', 
+      headerName:  '발행 일시', 
+      width:       180, 
+      align:       'center', 
       headerAlign: 'center' 
     },
   ], [dynamicColumns]);
@@ -168,13 +191,13 @@ const LabelPrintHistoryPage = () => {
   return (
     <Box 
       sx={{ 
-        p: 3, 
-        display: 'flex', 
+        p:             3, 
+        display:       'flex', 
         flexDirection: 'column', 
-        gap: 2, 
-        height: 'calc(100vh - 160px)',
-        width: '100%',
-        overflow: 'hidden' 
+        gap:           2, 
+        height:        'calc(100vh - 160px)',
+        width:         '100%',
+        overflow:      'hidden' 
       }}
     >
       <Typography 
@@ -187,11 +210,11 @@ const LabelPrintHistoryPage = () => {
 
       <Paper 
         sx={{ 
-          p: 2.5, 
+          p:               2.5, 
           backgroundColor: 'background.paper', 
-          border: '1px solid',
-          borderColor: 'divider',
-          flexShrink: 0
+          border:          '1px solid',
+          borderColor:     'divider',
+          flexShrink:      0
         }}
       >
         <Stack 
@@ -265,8 +288,8 @@ const LabelPrintHistoryPage = () => {
             onClick={fetchHistory}
             sx={{ 
               fontWeight: 'bold', 
-              minWidth: 100,
-              height: 40
+              minWidth:   100,
+              height:     40
             }}
           >
             조회하기
@@ -276,9 +299,9 @@ const LabelPrintHistoryPage = () => {
 
       <Paper 
         sx={{ 
-          flex: 1, 
-          width: '100%', 
-          overflow: 'hidden',
+          flex:            1, 
+          width:           '100%', 
+          overflow:        'hidden',
           backgroundColor: 'background.paper'
         }}
       >

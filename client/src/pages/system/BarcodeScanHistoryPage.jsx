@@ -1,6 +1,7 @@
 /**
  * @file        BarcodeScanHistoryPage.jsx
  * @description 하드웨어 스캐너를 통해 서버에 저장된 원본 바코드 및 파싱 데이터 이력 조회 페이지
+ * - [수정] 양식 로드 시 표(Table) 내부에 있는 가변 데이터 필드도 렌더링 컬럼에 포함되도록 파싱 로직 확장
  */
 
 import React, { 
@@ -69,7 +70,7 @@ const BarcodeScanHistoryPage = () => {
             };
           });
 
-          // 고정 컬럼들을 제외한 나머지 필드(파싱된 품명, 규격 등)를 추출하여 동적 컬럼 생성
+          // 고정 컬럼들을 제외한 나머지 필드(파싱된 품명, 규격, 표 셀 등)를 추출하여 동적 컬럼 생성
           const excludeFields = [
             'ScanSeq', 
             'BatchNo', 
@@ -132,7 +133,7 @@ const BarcodeScanHistoryPage = () => {
       headerAlign: 'center',
       align: 'center'
     },
-    ...dynamicColumns, // 파싱된 가변 필드 삽입
+    ...dynamicColumns, // 파싱된 가변 필드(표 셀 포함) 삽입
     { 
       field: 'Barcode', 
       headerName: '스캔된 바코드 원문', 
