@@ -1,6 +1,7 @@
 /**
  * @file        LabelPrintPage.jsx
  * @description 라벨 발행 관리 및 인쇄 시스템 페이지
+ * - [버그수정] 표(Table) 병합(Merge) 시 가려진 유령 셀에 대한 '데이터 입력 필드(TextField)'가 좌측 패널에 계속 생성되던 치명적 버그 완벽 해결 (UI 렌더링 필터링 적용)
  * - [버그수정] 일괄 데이터 입력창(마스터 필드)에 날짜(Date) 객체 데이터가 잘못 취합되어 1번 가변 데이터 필드로 밀려 들어가던 치명적 버그 완벽 해결
  * - [버그수정] 일괄 데이터 입력창(마스터 필드) 타이핑 시 스페이스바 튕김 및 글자 밀림 현상 완벽 해결 (포커스 디커플링 상태 연결)
  * - [기능유지] 양방향 데이터 일괄 입력, 엑셀 컬럼 자동 매핑, 대량 인쇄, 사용자 프리셋 저장 및 호출 완벽 지원
@@ -58,6 +59,32 @@ import {
   showConfirm 
 } from '../../utils/swal';
 
+// =========================================================================
+// 공통 유틸리티 헬퍼 함수
+// =========================================================================
+
+/**
+ * 표(Table) 병합(RowSpan/ColSpan)으로 인해 화면과 데이터에서 
+ * 가려져야 할 유령 셀들의 ID(row_col)를 Set으로 반환합니다.
+ */
+const getHiddenCells = (item) => {
+  const hidden = new Set();
+  if (item.type === 'table' && item.cells) {
+    item.cells.forEach(c => {
+      if ((c.rowSpan || 1) > 1 || (c.colSpan || 1) > 1) {
+        for (let r = 0; r < (c.rowSpan || 1); r++) {
+          for (let col = 0; col < (c.colSpan || 1); col++) {
+            // 기준이 되는 본체 셀(0,0)은 숨기지 않고 나머지 병합 영역만 숨김 처리
+            if (r === 0 && col === 0) continue;
+            hidden.add(`${c.row + r}_${c.col + col}`);
+          }
+        }
+      }
+    });
+  }
+  return hidden;
+};
+
 const LabelPrintPage = () => {
   // =========================================================================
   // 상태 관리 (State Management)
@@ -113,6 +140,9 @@ const LabelPrintPage = () => {
   // 로직 영역 (Data Formatting & Event Handlers)
   // =========================================================================
 
+  /**
+   * KST(한국 표준시) 기준으로 현재 시간을 포맷에 맞게 문자열로 반환
+   */
   const getKstFormattedDate = (format) => {
     if (!format) return '';
     const now = new Date();
@@ -127,7 +157,10 @@ const LabelPrintPage = () => {
       .replace(/ss/g, pad(kst.getUTCSeconds()));
   };
 
-  // ★ 버그 픽스: 마스터 데이터 취합 시 'date' 요소는 무조건 제외하고 순수 'data' 필드만 추적
+  /**
+   * 마스터 데이터 취합 시 'date' 요소 및 '유령 표 셀'은 
+   * 무조건 제외하고 순수 'data' 필드만 추적하여 결합합니다.
+   */
   const combinedMasterData = useMemo(() => {
     const parts = [];
     let hasAnyContent = false;
@@ -138,7 +171,11 @@ const LabelPrintPage = () => {
         if (val !== '') hasAnyContent = true;
         parts.push(val);
       } else if (item.type === 'table' && item.cells) {
+        // 표 병합 시 가려진 유령 셀들을 가져와서 취합 과정에서 필터링합니다.
+        const hiddenCells = getHiddenCells(item);
         item.cells.forEach(cell => {
+          if (hiddenCells.has(`${cell.row}_${cell.col}`)) return; // 가려졌으면 무시
+
           if (cell.cellType === 'data') {
             const val = dynamicData[`${item.id}_${cell.row}_${cell.col}`] || '';
             if (val !== '') hasAnyContent = true;
@@ -163,12 +200,16 @@ const LabelPrintPage = () => {
     return activeParts.join(layout.delimiter || '');
   }, [templateItems, dynamicData, layout.delimiter]);
 
+  // 마스터 텍스트 필드가 포커스를 잃었을 때만 동기화 처리 (입력 튕김 방지)
   useEffect(() => {
     if (!isMasterFocused) {
       setMasterInputText(combinedMasterData);
     }
   }, [combinedMasterData, isMasterFocused]);
 
+  /**
+   * 개별 데이터 입력 필드의 변경 사항을 적용합니다.
+   */
   const handleDynamicDataChange = (id, value) => { 
     setDynamicData((prev) => ({ 
       ...prev, 
@@ -183,6 +224,10 @@ const LabelPrintPage = () => {
     }
   };
 
+  /**
+   * 마스터 창에서 일괄 입력 시 각 데이터 셀로 값을 쪼개어 분배합니다.
+   * (이때 표의 유령 셀은 카운팅에서 제외하여 값이 밀리지 않도록 합니다)
+   */
   const handleMasterDataChange = (e) => {
     const newValue = e.target.value;
     setMasterInputText(newValue); 
@@ -191,10 +236,14 @@ const LabelPrintPage = () => {
     
     let totalFields = 0;
     templateItems.forEach(i => {
-      if (i.type === 'data') totalFields++;
-      else if (i.type === 'table' && i.cells) {
+      if (i.type === 'data') {
+        totalFields++;
+      } else if (i.type === 'table' && i.cells) {
+        const hiddenCells = getHiddenCells(i);
         i.cells.forEach(c => {
-          if (c.cellType === 'data') totalFields++;
+          if (!hiddenCells.has(`${c.row}_${c.col}`) && c.cellType === 'data') {
+            totalFields++;
+          }
         });
       }
     });
@@ -220,7 +269,9 @@ const LabelPrintPage = () => {
         newDynamicData[item.id] = parts[partIdx] !== undefined ? parts[partIdx] : '';
         partIdx++;
       } else if (item.type === 'table' && item.cells) {
+        const hiddenCells = getHiddenCells(item);
         item.cells.forEach(cell => {
+          if (hiddenCells.has(`${cell.row}_${cell.col}`)) return; // 가려진 셀에 데이터 분배 금지
           if (cell.cellType === 'data') {
             newDynamicData[`${item.id}_${cell.row}_${cell.col}`] = parts[partIdx] !== undefined ? parts[partIdx] : '';
             partIdx++;
@@ -239,6 +290,9 @@ const LabelPrintPage = () => {
     }
   };
 
+  /**
+   * 라벨 규격 및 배치 속성을 적용합니다.
+   */
   const handleLayoutChange = (e) => {
     const { name, value } = e.target;
     setLayout((prev) => ({ 
@@ -247,22 +301,30 @@ const LabelPrintPage = () => {
     }));
   };
   
+  /**
+   * 입력 필드 포커스 해제 시 최소값을 강제로 보정합니다.
+   */
   const handleLayoutBlur = (e) => {
     const { name, value } = e.target;
     let val = parseFloat(value);
-    if(name === 'labelW' || name === 'labelH') {
-      if(isNaN(val) || val < 10) val = name === 'labelW' ? 100 : 50;
-    } else if(name === 'cols' || name === 'rows') {
-      if(isNaN(val) || val < 1) val = 1;
+    
+    if (name === 'labelW' || name === 'labelH') {
+      if (isNaN(val) || val < 10) val = name === 'labelW' ? 100 : 50;
+    } else if (name === 'cols' || name === 'rows') {
+      if (isNaN(val) || val < 1) val = 1;
     } else {
-      if(isNaN(val) || val < 0) val = 0;
+      if (isNaN(val) || val < 0) val = 0;
     }
+    
     setLayout((prev) => ({ 
       ...prev, 
       [name]: String(val) 
     }));
   };
 
+  /**
+   * 엑셀 매핑용 타겟 항목을 추출합니다. (유령 셀 제외)
+   */
   const getMappingTargets = useCallback(() => {
     const targets = [];
     templateItems.forEach(item => {
@@ -273,7 +335,9 @@ const LabelPrintPage = () => {
           isTable: false 
         });
       } else if (item.type === 'table' && item.cells) {
+        const hiddenCells = getHiddenCells(item);
         item.cells.forEach(cell => {
+          if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
           if (cell.cellType === 'data') {
             targets.push({ 
               id:      `${item.id}_${cell.row}_${cell.col}`, 
@@ -304,6 +368,9 @@ const LabelPrintPage = () => {
     }
   };
 
+  /**
+   * 엑셀 파일 로드 및 데이터 파싱
+   */
   const handleExcelDataImport = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -443,7 +510,10 @@ const LabelPrintPage = () => {
             dynamicDataForDB[item.label] = dataItem[item.id] || '';
           }
         } else if (item.type === 'table' && item.cells) {
+          const hiddenCells = getHiddenCells(item); // ★ 서버 전송용 DB 데이터에도 유령셀 무시
           item.cells.forEach(cell => {
+            if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
+
             if (cell.cellType === 'data' || cell.cellType === 'date') {
               let val = cell.cellType === 'date' 
                 ? getFormattedDateString(cell.content || 'YYYY-MM-DD') 
@@ -546,7 +616,9 @@ const LabelPrintPage = () => {
         if (item.type === 'data') {
           initialData[item.id] = '';
         } else if (item.type === 'table' && item.cells) {
+          const hiddenCells = getHiddenCells(item); // ★ 초기 데이터 세팅 시 유령셀 무시
           item.cells.forEach(cell => {
+            if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
             if (cell.cellType === 'data') {
               initialData[`${item.id}_${cell.row}_${cell.col}`] = '';
             }
@@ -864,8 +936,10 @@ const LabelPrintPage = () => {
                     onChange={(e) => handleDynamicDataChange(item.id, e.target.value)} 
                   />
                 ))}
-                {templateItems.filter((item) => item.type === 'table').map((table) => (
-                  table.cells?.filter(c => c.cellType === 'data').map((cell) => (
+                {/* ★ 버그 픽스: 표 내부 데이터 입력창 렌더링 시에도 가려진 유령 셀(hiddenCells) 무시 */}
+                {templateItems.filter((item) => item.type === 'table').map((table) => {
+                  const hiddenCells = getHiddenCells(table);
+                  return table.cells?.filter(c => c.cellType === 'data' && !hiddenCells.has(`${c.row}_${c.col}`)).map((cell) => (
                     <TextField 
                       key={`${table.id}_${cell.row}_${cell.col}`} 
                       label={`표 셀: ${cell.dataId || '데이터'}`} 
@@ -875,8 +949,8 @@ const LabelPrintPage = () => {
                       onChange={(e) => handleDynamicDataChange(`${table.id}_${cell.row}_${cell.col}`, e.target.value)} 
                       sx={{ backgroundColor: 'action.hover' }} 
                     />
-                  ))
-                ))}
+                  ));
+                })}
               </Stack>
             )}
 

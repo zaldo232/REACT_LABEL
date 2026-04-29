@@ -2,6 +2,7 @@
  * @file        BarcodeScanPage.jsx
  * @description 실시간 바코드 등록 및 자동 파싱 처리 페이지
  * (연결된 하드웨어 스캐너로부터 데이터를 받아와 양식의 구분자에 맞게 파싱하고, 대기 목록을 관리합니다.)
+ * - [버그수정] 표(Table) 병합(Merge)으로 인해 가려진 유령 셀이 파싱 대상에 포함되어 스캔 데이터가 밀리던 현상 완벽 해결 (유령 셀 필터링 추가)
  * - [버그수정] 구분자가 없을 때(빈 문자열) 강제로 '_'로 덮어씌워지던 Falsy 로직 해결
  * - [버그수정] 양식 로드 시 독립 데이터(Data)/날짜(Date) 객체 및 표(Table) 내부의 가변 데이터 셀을 모두 추출하여 파싱 목록과 완벽 동기화
  */
@@ -35,6 +36,31 @@ import {
   showAlert, 
   showConfirm 
 } from '../../utils/swal';
+
+// =========================================================================
+// 공통 유틸리티 헬퍼 함수
+// =========================================================================
+
+/**
+ * 표(Table) 병합(RowSpan/ColSpan)으로 인해 화면과 데이터에서 
+ * 가려져야 할 유령 셀들의 ID(row_col)를 Set으로 반환합니다.
+ */
+const getHiddenCells = (item) => {
+  const hidden = new Set();
+  if (item.type === 'table' && item.cells) {
+    item.cells.forEach(c => {
+      if ((c.rowSpan || 1) > 1 || (c.colSpan || 1) > 1) {
+        for (let r = 0; r < (c.rowSpan || 1); r++) {
+          for (let col = 0; col < (c.colSpan || 1); col++) {
+            if (r === 0 && col === 0) continue;
+            hidden.add(`${c.row + r}_${c.col + col}`);
+          }
+        }
+      }
+    });
+  }
+  return hidden;
+};
 
 /**
  * [컴포넌트] BarcodeScanPage
@@ -91,10 +117,11 @@ const BarcodeScanPage = () => {
       return;
     }
     
-    // ★ [핵심 수정] 구분자가 비어있을 경우, split("")으로 글자를 쪼개는 것을 막고 원문 전체를 할당
+    // 구분자가 비어있을 경우, split("")으로 글자를 쪼개는 것을 막고 원문 전체를 할당
     const parts = currentDelimiter ? lastScan.barcode.split(currentDelimiter) : [lastScan.barcode];
     const updatedMeta = { ...metaData };
 
+    // 순서대로 데이터 파싱 및 할당
     templateItems.forEach((item, index) => {
       if (parts[index]) {
         updatedMeta[item.label] = parts[index];
@@ -137,11 +164,11 @@ const BarcodeScanPage = () => {
       
       const metaItem = fullDesign.find(i => i.type === 'meta');
       
-      // ★ [핵심 수정] || 연산자 대신 명시적 undefined 체크로, 구분자가 ''(빈칸)인 설정을 완벽하게 존중
+      // || 연산자 대신 명시적 undefined 체크로, 구분자가 ''(빈칸)인 설정을 완벽하게 존중
       const savedDelimiter = metaItem?.layout?.delimiter;
       setCurrentDelimiter(savedDelimiter !== undefined && savedDelimiter !== null ? savedDelimiter : '_');
 
-      // ★ [핵심 수정] Data 뿐만 아니라 Date(날짜) 객체 및 표 내부 셀까지 모두 파싱 대상으로 추출
+      // ★ Data 뿐만 아니라 Date(날짜) 객체 및 표 내부 셀까지 모두 파싱 대상으로 추출 (유령 셀 제외)
       const dataFields = [];
       fullDesign.forEach(item => {
         if (item.type === 'data' || item.type === 'date') {
@@ -150,7 +177,10 @@ const BarcodeScanPage = () => {
             label: item.label || (item.type === 'date' ? '날짜' : '데이터') 
           });
         } else if (item.type === 'table' && item.cells) {
+          const hiddenCells = getHiddenCells(item); // ★ 표 병합으로 가려진 유령 셀 파악
           item.cells.forEach(cell => {
+            if (hiddenCells.has(`${cell.row}_${cell.col}`)) return; // ★ 가려진 셀은 파싱 항목에서 완벽히 제외!
+
             if (cell.cellType === 'data' || cell.cellType === 'date') {
               dataFields.push({ 
                 id:    `${item.id}_${cell.row}_${cell.col}`, 

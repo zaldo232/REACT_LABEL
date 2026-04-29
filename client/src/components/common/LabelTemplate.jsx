@@ -1,9 +1,12 @@
 /**
- * @file    LabelTemplate.jsx
+ * @file        LabelTemplate.jsx
  * @description 라벨 인쇄 및 미리보기용 공통 템플릿 컴포넌트
- * - [렌더링동기화] 디자인 페이지의 최신 렌더링 방식(SVG 중앙 선두께, 표 선 겹침 방지, 0.1mm 지원) 완벽 이식
+ * - [기능추가] 표(Table) 내부 개별 셀 폰트 크기 독립 적용 로직 추가
+ * - [기능추가] 엑셀처럼 행/열을 개별적으로 리사이즈했을 때 저장된 동적 너비/높이 비율(rowRatios, colRatios) 완벽 렌더링 반영
+ * - [기능추가] 표 개별 셀 데이터 가시성(Show/Hide)에 따른 렌더링 스킵 로직 적용
+ * - [버그수정] 표(Table) 셀 병합(Span) 시 뒷면에 가려지는 유령 셀 필터링(숨김) 및 데이터 취합 무시 로직 적용
+ * - [렌더링동기화] 디자인 페이지의 최신 렌더링 방식(SVG 중앙 선두께, 표 선 겹침 방지, 0.1mm 지원) 이식
  * - [버그수정] 데이터가 비어있을 때("") 구분자가 결합되어 띄어쓰기가 생기던 오류 수정 (빈 값 필터링)
- * - [복구] 표(Table) 셀 병합(Span) 시 뒷면에 가려지는 유령 셀 필터링(숨김) 로직 복구
  */
 
 import React, { 
@@ -24,6 +27,39 @@ const PRINT_COLORS = {
   foreground: '#000000'
 };
 
+// =========================================================================
+// 공통 헬퍼 영역
+// =========================================================================
+
+/**
+ * 표 병합 시 가려진 셀을 찾아내는 헬퍼 함수
+ * @param {Object} item - 표(Table) 객체 데이터
+ * @returns {Set} 가려진 셀의 고유 ID(row_col) 집합
+ */
+const getHiddenCells = (item) => {
+  const hidden = new Set();
+  
+  if (item.type === 'table' && item.cells) {
+    item.cells.forEach((c) => {
+      if ((c.rowSpan || 1) > 1 || (c.colSpan || 1) > 1) {
+        for (let r = 0; r < (c.rowSpan || 1); r++) {
+          for (let col = 0; col < (c.colSpan || 1); col++) {
+            // 기준 셀(0,0)은 유지하고, 확장된 영역만 숨김 처리
+            if (r === 0 && col === 0) continue;
+            hidden.add(`${c.row + r}_${c.col + col}`);
+          }
+        }
+      }
+    });
+  }
+  
+  return hidden;
+};
+
+// =========================================================================
+// 메인 컴포넌트 영역
+// =========================================================================
+
 const LabelTemplate = forwardRef(({ 
   items       = [], 
   dynamicData = {}, 
@@ -37,12 +73,13 @@ const LabelTemplate = forwardRef(({
   // =========================================================================
 
   /**
-   * KST(한국 표준시) 기준으로 현재 시간을 지정된 포맷으로 반환하는 함수
+   * KST(한국 표준시) 기준으로 현재 시간을 지정된 포맷으로 반환
    */
   const getKstFormattedDate = (format) => {
     if (!format) return '';
+    
     const now     = new Date();
-    // UTC 기준 시간에 9시간을 더하여 KST(한국 표준시)로 변환합니다.
+    // UTC 기준 시간에 9시간을 더하여 KST(한국 표준시)로 변환
     const kstDate = new Date(now.getTime() + (9 * 60 * 60 * 1000));
     const pad     = (n) => String(n).padStart(2, '0');
     
@@ -56,15 +93,16 @@ const LabelTemplate = forwardRef(({
   };
 
   /**
-   * 바코드/QR코드에 주입될 가변 데이터 및 정적 데이터를 결합하는 로직
-   * - 빈 값("")인 경우 구분자가 불필요하게 결합되는 현상을 방지합니다.
+   * 바코드/QR코드에 주입될 가변 데이터 및 정적 데이터 결합 로직
+   * - 빈 값("")인 경우 구분자가 불필요하게 결합되는 현상 방지
+   * - 병합되어 화면에 보이지 않는 유령 셀은 데이터 결합에서 철저히 제외
    */
   const codeDataWithPrefix = useMemo(() => {
     const parts = [];
     let hasAnyContent = false;
     
-    items.forEach(item => {
-      // 일반 데이터 및 날짜 개체 처리
+    items.forEach((item) => {
+      // 1. 일반 데이터 및 날짜 개체 처리
       if (item.type === 'data' || item.type === 'date') {
         let val = item.type === 'date' 
           ? getKstFormattedDate(item.content).replace(/[-_:\s]/g, '') 
@@ -73,11 +111,17 @@ const LabelTemplate = forwardRef(({
         if (val !== '') hasAnyContent = true;
         parts.push(`${item.prefix || ''}${val}${item.suffix || ''}`);
       } 
-      // 표(Table) 내부 셀 데이터 처리
+      // 2. 표(Table) 내부 셀 데이터 처리
       else if (item.type === 'table' && item.cells) {
+        const hiddenCells = getHiddenCells(item); 
+        
         item.cells.forEach((cell) => {
+          // 가려진 셀은 데이터 취합에서 무시
+          if (hiddenCells.has(`${cell.row}_${cell.col}`)) return; 
+
           if (cell.cellType === 'data' || cell.cellType === 'date') {
             let val = '';
+            
             if (cell.cellType === 'date') {
               val = getKstFormattedDate(cell.content || 'YYYY-MM-DD').replace(/[-_:\s]/g, '');
             } else {
@@ -93,7 +137,7 @@ const LabelTemplate = forwardRef(({
 
     if (!hasAnyContent) return '';
     
-    // 후행 빈칸 트리밍 (뒷부분의 무의미한 빈 문자열 제거로 띄어쓰기 방지)
+    // 3. 후행 빈칸 트리밍 (무의미한 빈 문자열 및 구분자 결합 방지)
     let lastNonEmpty = -1;
     for (let idx = parts.length - 1; idx >= 0; idx--) {
       if (parts[idx] !== '') {
@@ -101,9 +145,10 @@ const LabelTemplate = forwardRef(({
         break;
       }
     }
-    const activeParts = parts.slice(0, lastNonEmpty + 1);
     
+    const activeParts = parts.slice(0, lastNonEmpty + 1);
     return activeParts.join(delimiter || '');
+    
   }, [items, dynamicData, delimiter]);
 
   // =========================================================================
@@ -114,8 +159,8 @@ const LabelTemplate = forwardRef(({
       ref={ref} 
       sx={{
         position:        'relative', 
-        width:           `${parseFloat(width)||100}mm`, 
-        height:          `${parseFloat(height)||50}mm`,
+        width:           `${parseFloat(width) || 100}mm`, 
+        height:          `${parseFloat(height) || 50}mm`,
         backgroundColor: PRINT_COLORS.background, 
         color:           PRINT_COLORS.foreground,
         border:          `1px solid ${PRINT_COLORS.foreground}`, 
@@ -125,45 +170,39 @@ const LabelTemplate = forwardRef(({
         overflow:        'hidden',
       }}
     >
-      {/* 디자인 툴의 레이어 순서(Z-Index) 정책에 맞게 렌더링 순서 동기화
-        - items 배열의 뒤에 있을수록 화면 아래에 깔리도록 reverse를 적용합니다. 
-      */}
+      {/* 레이어 역순(Z-Index) 매핑 렌더링 */}
       {[...items].sort((a, b) => 0).reverse().map((item, index) => {
         if (item.visible === false) return null;
 
-        const itemZIndex     = items.length - index;
-        const isTextType     = ['text', 'data', 'date'].includes(item.type);
-        let displayContent   = item.content;
+        const itemZIndex   = items.length - index;
+        const isTextType   = ['text', 'data', 'date'].includes(item.type);
+        let displayContent = item.content;
         
-        // 텍스트 출력 데이터 매핑
+        // 텍스트 속성 데이터 바인딩
         if (item.type === 'data') {
           displayContent = dynamicData[item.id] || ''; 
         } else if (item.type === 'date') {
           displayContent = getKstFormattedDate(item.content); 
         }
 
-        // 셀 병합 시 뒷면에 가려지는 유령 셀 숨김 처리
-        const hiddenCells = new Set();
-        if (item.type === 'table' && item.cells) {
-          item.cells.forEach(c => {
-            if ((c.rowSpan || 1) > 1 || (c.colSpan || 1) > 1) {
-              for (let r = 0; r < (c.rowSpan || 1); r++) {
-                for (let col = 0; col < (c.colSpan || 1); col++) {
-                  if (r === 0 && col === 0) continue; 
-                  hiddenCells.add(`${c.row + r}_${c.col + col}`);
-                }
-              }
-            }
-          });
-        }
+        const hiddenCells = getHiddenCells(item);
+
+        // ★ 가변 행/열 비율 추출 로직
+        const colRatios = item.colRatios || Array(item.cols).fill(100 / (item.cols || 1));
+        const rowRatios = item.rowRatios || Array(item.rows).fill(100 / (item.rows || 1));
+
+        const getColPos    = (idx) => colRatios.slice(0, idx).reduce((a, b) => a + b, 0);
+        const getColWidth  = (idx, span) => colRatios.slice(idx, idx + (span || 1)).reduce((a, b) => a + b, 0);
+        const getRowPos    = (idx) => rowRatios.slice(0, idx).reduce((a, b) => a + b, 0);
+        const getRowHeight = (idx, span) => rowRatios.slice(idx, idx + (span || 1)).reduce((a, b) => a + b, 0);
 
         return (
           <div 
             key={item.id} 
             style={{ 
               position: 'absolute', 
-              left:     `${(parseFloat(item.x)||0) * MM_PX_UNIT}px`, 
-              top:      `${(parseFloat(item.y)||0) * MM_PX_UNIT}px`, 
+              left:     `${(parseFloat(item.x) || 0) * MM_PX_UNIT}px`, 
+              top:      `${(parseFloat(item.y) || 0) * MM_PX_UNIT}px`, 
               zIndex:   itemZIndex 
             }}
           >
@@ -171,8 +210,8 @@ const LabelTemplate = forwardRef(({
               style={{ 
                 transform:       `rotate(${parseFloat(item.rotate) || 0}deg)`, 
                 transformOrigin: 'center center', 
-                width:           isTextType ? 'max-content' : `${parseFloat(item.width)||0}mm`, 
-                height:          isTextType ? 'max-content' : `${parseFloat(item.height)||0}mm`, 
+                width:           isTextType ? 'max-content' : `${parseFloat(item.width) || 0}mm`, 
+                height:          isTextType ? 'max-content' : `${parseFloat(item.height) || 0}mm`, 
                 minHeight:       item.type === 'line' ? '1px' : undefined,
                 position:        'relative' 
               }}
@@ -182,6 +221,7 @@ const LabelTemplate = forwardRef(({
               {isTextType && (() => {
                 const pfx = item.showPrefixSuffixOnLabel !== false ? (item.prefix || '') : '';
                 const sfx = item.showPrefixSuffixOnLabel !== false ? (item.suffix || '') : '';
+                
                 return (
                   <Box 
                     sx={{
@@ -195,7 +235,7 @@ const LabelTemplate = forwardRef(({
                   >
                     <Typography 
                       sx={{ 
-                        fontSize:   `${parseFloat(item.fontSize)||10}pt`, 
+                        fontSize:   `${parseFloat(item.fontSize) || 10}pt`, 
                         fontWeight: item.fontWeight || 'normal', 
                         fontStyle:  item.fontStyle || 'normal',
                         color:      PRINT_COLORS.foreground, 
@@ -214,6 +254,7 @@ const LabelTemplate = forwardRef(({
               {/* --- 2. 기본 도형 개체 (SVG 렌더링 동기화) --- */}
               {item.type === 'rect' && (() => {
                  const bw = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
+                 
                  return (
                   <svg 
                     width="100%" 
@@ -238,6 +279,7 @@ const LabelTemplate = forwardRef(({
 
               {item.type === 'circle' && (() => {
                  const bw = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
+                 
                  return (
                   <svg 
                     width="100%" 
@@ -263,6 +305,7 @@ const LabelTemplate = forwardRef(({
               {/* --- 선(Line) SVG 동기화 --- */}
               {item.type === 'line' && (() => {
                  const thk = item.height !== undefined && item.height !== '' ? parseFloat(item.height) : 0.5;
+                 
                  return (
                   <svg 
                     width="100%" 
@@ -311,6 +354,12 @@ const LabelTemplate = forwardRef(({
               {/* --- 4. 1D 바코드 단일 개체 --- */}
               {item.type === 'barcode' && (
                 <Box 
+                  ref={(el) => {
+                    if (el) {
+                      const svg = el.querySelector('svg');
+                      if (svg) svg.setAttribute('preserveAspectRatio', 'none');
+                    }
+                  }}
                   sx={{ 
                     width:          '100%', 
                     height:         '100%', 
@@ -322,12 +371,6 @@ const LabelTemplate = forwardRef(({
                       width:   '100% !important',
                       height:  '100% !important',
                       display: 'block'
-                    }
-                  }}
-                  ref={(el) => {
-                    if (el) {
-                      const svg = el.querySelector('svg');
-                      if (svg) svg.setAttribute('preserveAspectRatio', 'none');
                     }
                   }}
                 >
@@ -372,24 +415,21 @@ const LabelTemplate = forwardRef(({
                 </Box>
               )}
 
-              {/* --- 6. 표(Table) 복합 개체 (비대화 방지 렌더링 동기화) --- */}
+              {/* --- 6. 표(Table) 복합 개체 (정밀 SVG 오버레이) --- */}
               {item.type === 'table' && (() => {
                 const bw = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
                 const strokeColor = item.stroke || PRINT_COLORS.foreground;
                 const showBorders = item.showBorder !== false && bw > 0;
                 
-                // 컨테이너는 윗선/왼선만 그리고, 각 셀은 아랫선/오른선만 그림으로써 선 중첩(비대화) 방지
-                const tableBorderStyle = showBorders ? `${bw}mm solid ${strokeColor}` : 'none';
-                
                 return (
                   <Box 
                     sx={{ 
-                      width:               '100%', 
-                      height:              '100%', 
-                      position:            'relative',
+                      width:    '100%', 
+                      height:   '100%', 
+                      position: 'relative',
                     }}
                   >
-                    {/* 표 배경색 투명도 처리 */}
+                    {/* 표 배경색 적용 */}
                     <Box 
                       sx={{ 
                         width:           '100%', 
@@ -401,7 +441,7 @@ const LabelTemplate = forwardRef(({
                       }} 
                     />
 
-                    {/* SVG 겹침없는 선 오버레이 (정밀한 0.1mm 소수점 렌더링 보장) */}
+                    {/* SVG 비율 기반 정밀 선 렌더링 */}
                     {showBorders && (
                       <svg 
                         width="100%" 
@@ -417,13 +457,14 @@ const LabelTemplate = forwardRef(({
                       >
                         {item.cells?.map((cell, idx) => {
                           if (hiddenCells.has(`${cell.row}_${cell.col}`)) return null;
+                          
                           return (
                             <rect 
                               key={idx}
-                              x={`${(cell.col / (item.cols || 1)) * 100}%`}
-                              y={`${(cell.row / (item.rows || 1)) * 100}%`}
-                              width={`${((cell.colSpan || 1) / (item.cols || 1)) * 100}%`}
-                              height={`${((cell.rowSpan || 1) / (item.rows || 1)) * 100}%`}
+                              x={`${getColPos(cell.col)}%`}
+                              y={`${getRowPos(cell.row)}%`}
+                              width={`${getColWidth(cell.col, cell.colSpan)}%`}
+                              height={`${getRowHeight(cell.row, cell.rowSpan)}%`}
                               fill="none"
                               stroke={strokeColor}
                               strokeWidth={`${bw}mm`}
@@ -433,14 +474,14 @@ const LabelTemplate = forwardRef(({
                       </svg>
                     )}
 
-                    {/* 내부 셀 데이터 렌더링 영역 */}
+                    {/* 내부 셀 데이터 렌더링 (가변 비율 Grid 적용) */}
                     <Box 
                       sx={{ 
                         width:               '100%', 
                         height:              '100%', 
                         display:             'grid', 
-                        gridTemplateRows:    `repeat(${item.rows || 1}, 1fr)`, 
-                        gridTemplateColumns: `repeat(${item.cols || 1}, 1fr)`, 
+                        gridTemplateRows:    rowRatios.map(r => `${r}%`).join(' '), 
+                        gridTemplateColumns: colRatios.map(r => `${r}%`).join(' '), 
                         position:            'relative',
                         zIndex:              1,
                         boxSizing:           'border-box' 
@@ -450,12 +491,16 @@ const LabelTemplate = forwardRef(({
                         if (hiddenCells.has(`${cell.row}_${cell.col}`)) return null;
 
                         let cellDisplay = cell.content || '';
-                        if (cell.cellType === 'data') cellDisplay = dynamicData[`${item.id}_${cell.row}_${cell.col}`] || '';
-                        else if (cell.cellType === 'date') cellDisplay = getKstFormattedDate(cell.content || 'YYYY-MM-DD');
+                        if (cell.cellType === 'data') {
+                          cellDisplay = dynamicData[`${item.id}_${cell.row}_${cell.col}`] || '';
+                        } else if (cell.cellType === 'date') {
+                          cellDisplay = getKstFormattedDate(cell.content || 'YYYY-MM-DD');
+                        }
 
                         const showCellPfxSfx = cell.showPrefixSuffixOnLabel !== false;
                         const cPfx = showCellPfxSfx ? (cell.prefix || '') : '';
                         const cSfx = showCellPfxSfx ? (cell.suffix || '') : '';
+                        const isCellVisible  = cell.visible !== false; 
 
                         return (
                           <Box 
@@ -471,79 +516,81 @@ const LabelTemplate = forwardRef(({
                               padding:         '2px',
                             }}
                           >
-                            {cell.cellType === 'barcode' ? (
-                              <Box 
-                                sx={{ 
-                                  display:        'flex', 
-                                  alignItems:     'center', 
-                                  justifyContent: 'center', 
-                                  width:          '100%', 
-                                  height:         '100%', 
-                                  overflow:       'hidden', 
-                                  '& svg': { 
-                                    width:   '100% !important', 
-                                    height:  '100% !important', 
-                                    display: 'block' 
-                                  } 
-                                }}
-                                ref={(el) => { 
-                                  if (el) { 
-                                    const svg = el.querySelector('svg'); 
-                                    if (svg) svg.setAttribute('preserveAspectRatio', 'none'); 
-                                  } 
-                                }}
-                              >
-                                 <Barcode 
-                                   value={codeDataWithPrefix || 'BARCODE'} 
-                                   format={cell.barcodeType || 'CODE128'} 
-                                   width={2} 
-                                   height={35} 
-                                   displayValue={cell.displayValue !== false} 
-                                   margin={4} 
-                                   background={PRINT_COLORS.background} 
-                                   lineColor={PRINT_COLORS.foreground} 
-                                 />
-                              </Box>
-                            ) : cell.cellType === 'qrcode' ? (
-                              <Box 
-                                sx={{ 
-                                  display:        'flex', 
-                                  alignItems:     'center', 
-                                  justifyContent: 'center', 
-                                  width:          '100%', 
-                                  height:         '100%', 
-                                  padding:        '2px', 
-                                  boxSizing:      'border-box' 
-                                }}
-                              >
-                                <QRCode 
-                                  value={codeDataWithPrefix || 'QRCODE'} 
-                                  level={cell.qrErrorLevel || 'M'} 
-                                  size={256} 
-                                  bgColor={PRINT_COLORS.background} 
-                                  fgColor={PRINT_COLORS.foreground} 
-                                  style={{ 
-                                    maxWidth:  '100%', 
-                                    maxHeight: '100%', 
-                                    width:     'auto', 
-                                    height:    'auto' 
-                                  }} 
-                                />
-                              </Box>
-                            ) : (
-                              <Typography 
-                                sx={{ 
-                                  fontSize:   `${parseFloat(item.fontSize)||10}pt`, 
-                                  fontWeight: item.fontWeight || 'normal', 
-                                  fontStyle:  item.fontStyle || 'normal', 
-                                  color:      PRINT_COLORS.foreground, 
-                                  wordBreak:  'break-all', 
-                                  textAlign:  'center', 
-                                  lineHeight: 1.1 
-                                }}
-                              >
-                                {cell.cellType === 'text' ? cellDisplay : `${cPfx}${cellDisplay}${cSfx}`}
-                              </Typography>
+                            {isCellVisible && (
+                              cell.cellType === 'barcode' ? (
+                                <Box 
+                                  ref={(el) => { 
+                                    if (el) { 
+                                      const svg = el.querySelector('svg'); 
+                                      if (svg) svg.setAttribute('preserveAspectRatio', 'none'); 
+                                    } 
+                                  }}
+                                  sx={{ 
+                                    display:        'flex', 
+                                    alignItems:     'center', 
+                                    justifyContent: 'center', 
+                                    width:          '100%', 
+                                    height:         '100%', 
+                                    overflow:       'hidden', 
+                                    '& svg': { 
+                                      width:   '100% !important', 
+                                      height:  '100% !important', 
+                                      display: 'block' 
+                                    } 
+                                  }}
+                                >
+                                   <Barcode 
+                                     value={codeDataWithPrefix || 'BARCODE'} 
+                                     format={cell.barcodeType || 'CODE128'} 
+                                     width={2} 
+                                     height={35} 
+                                     displayValue={cell.displayValue !== false} 
+                                     margin={4} 
+                                     background={PRINT_COLORS.background} 
+                                     lineColor={PRINT_COLORS.foreground} 
+                                   />
+                                </Box>
+                              ) : cell.cellType === 'qrcode' ? (
+                                <Box 
+                                  sx={{ 
+                                    display:        'flex', 
+                                    alignItems:     'center', 
+                                    justifyContent: 'center', 
+                                    width:          '100%', 
+                                    height:         '100%', 
+                                    padding:        '2px', 
+                                    boxSizing:      'border-box' 
+                                  }}
+                                >
+                                  <QRCode 
+                                    value={codeDataWithPrefix || 'QRCODE'} 
+                                    level={cell.qrErrorLevel || 'M'} 
+                                    size={256} 
+                                    bgColor={PRINT_COLORS.background} 
+                                    fgColor={PRINT_COLORS.foreground} 
+                                    style={{ 
+                                      maxWidth:  '100%', 
+                                      maxHeight: '100%', 
+                                      width:     'auto', 
+                                      height:    'auto' 
+                                    }} 
+                                  />
+                                </Box>
+                              ) : (
+                                <Typography 
+                                  sx={{ 
+                                    fontSize:   `${parseFloat(cell.fontSize) || parseFloat(item.fontSize) || 10}pt`, 
+                                    fontWeight: item.fontWeight || 'normal', 
+                                    fontStyle:  item.fontStyle || 'normal', 
+                                    color:      PRINT_COLORS.foreground, 
+                                    wordBreak:  'break-all', 
+                                    textAlign:  'center', 
+                                    lineHeight: 1.1 
+                                  }}
+                                >
+                                  {cell.cellType === 'text' ? cellDisplay : `${cPfx}${cellDisplay}${cSfx}`}
+                                </Typography>
+                              )
                             )}
                           </Box>
                         );

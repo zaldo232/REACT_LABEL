@@ -1,15 +1,12 @@
 /**
- * @file    LabelDesignPage.jsx
+ * @file        LabelDesignPage.jsx
  * @description 전문 디자인 툴 방식의 라벨 편집기 페이지
- * - [버그수정] 표(Table) CSS border를 제거하고 SVG 렌더링 오버레이로 교체하여 0.1mm 소수점 굵기 완벽 지원 및 선 겹침(비대화) 현상 100% 해결
- * - [버그수정] 일반 선(Line) 객체를 0.1mm로 얇게 했을 때 사라지는 현상을 SVG <line> 태그 렌더링 도입으로 완벽 해결
- * - [UX개선] 선 두께, 격자 간격 등 숫자 입력창에 소수점(0.1) 입력 완벽 지원 및 지웠을 때 강제로 1로 튕기는 버그 해결 (onBlur 검증)
- * - [기능추가] 신규 개체 생성 시 기본 선 색상(Stroke) 검은색 고정 및 선/채우기 독립 컬러 피커 적용
- * - [UI/UX개선] 캔버스 배경 격자(Grid) 점을 수학적으로 완벽하게 (0, 0) 기준으로 렌더링하여 자석 스냅 오차율 0% 달성
- * - [버그수정] 레이어 순서(Z-Index) 앞/뒤 방향 역전 현상 수정 (Index 0 = 최상단)
- * - [기능추가] PPT 스타일의 레이어 순서 제어 기능 추가 (맨 앞으로, 앞으로, 뒤로, 맨 뒤로)
- * - [기능추가] 표(Table) 테두리 선 표시/숨김 토글 및 화면 표시 여부 추가
- * - [기능복구] 표(Table) 셀 병합 해제(Unmerge) 및 행/열 중간 삽입/삭제 로직 완벽 구현
+ * - [UX개선] 선택 도구 단축키 표준화: Ctrl(Cmd) 키로 개별 다중 선택, Shift 키로 시작~끝 범위 일괄 선택 기능 탑재 (캔버스 개체 및 표 내부 셀 모두 적용)
+ * - [버그수정] 표(Table) 병합된 셀이 포함된 행/열 삭제 시 셀이 통째로 날아가며 하단에 빈 공간(유령 행)이 붕 뜨던 치명적 버그 완벽 해결
+ * - [버그수정] 행/열 삭제 시 남은 셀들이 빈 공간을 100% 꽉 채우지 못하던 현상 완벽 해결 (CSS Grid 'fr' 강제 할당)
+ * - [기능추가] 상단 및 좌측에 정밀 렌더링 기반의 눈금자(Ruler) 탑재 완료 (1mm 단위)
+ * - [기능추가] 마우스 포인터를 따라다니는 눈금자 십자 가이드라인(Tracking Line) 추가
+ * - [버그수정] 개체를 제자리에서 클릭 시 History가 중복으로 쌓이던 현상 완벽 해결 (JSON 딥 체크 알고리즘)
  */
 
 import React, { 
@@ -44,8 +41,7 @@ import {
   Select,
   MenuItem,
   FormControl,
-  InputLabel,
-  DialogActions
+  InputLabel
 } from '@mui/material';
 import { Reorder } from 'framer-motion'; 
 import DragIndicatorIcon from '@mui/icons-material/DragIndicator';
@@ -89,6 +85,10 @@ import KeyboardDoubleArrowUpIcon from '@mui/icons-material/KeyboardDoubleArrowUp
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardDoubleArrowDownIcon from '@mui/icons-material/KeyboardDoubleArrowDown';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import UndoIcon from '@mui/icons-material/Undo';
+import RedoIcon from '@mui/icons-material/Redo';
 
 import Barcode from 'react-barcode';
 import QRCode from 'react-qr-code';
@@ -99,8 +99,30 @@ import {
   showConfirm 
 } from '../../utils/swal';
 import * as XLSX from 'xlsx';
+import html2canvas from 'html2canvas';
 
 const MM_PX_UNIT = 3.78; 
+
+// =========================================================================
+// 공통 유틸리티 헬퍼 함수
+// =========================================================================
+
+const getHiddenCells = (item) => {
+  const hidden = new Set();
+  if (item.type === 'table' && item.cells) {
+    item.cells.forEach(c => {
+      if ((c.rowSpan || 1) > 1 || (c.colSpan || 1) > 1) {
+        for (let r = 0; r < (c.rowSpan || 1); r++) {
+          for (let col = 0; col < (c.colSpan || 1); col++) {
+            if (r === 0 && col === 0) continue;
+            hidden.add(`${c.row + r}_${c.col + col}`);
+          }
+        }
+      }
+    });
+  }
+  return hidden;
+};
 
 const LabelDesignPage = () => {
   // =========================================================================
@@ -128,7 +150,6 @@ const LabelDesignPage = () => {
   const [showGrid, setShowGrid] = useState(true);     
   const [snapToGrid, setSnapToGrid] = useState(true); 
   
-  // 격자 간격 상태: 문자열로 관리하여 사용자가 다 지워도 튕기지 않음
   const [gridSize, setGridSize] = useState('2');
   const safeGridSize = parseFloat(gridSize) > 0 ? parseFloat(gridSize) : 2;
   
@@ -137,6 +158,8 @@ const LabelDesignPage = () => {
   const [isResizing, setIsResizing] = useState(false);
   const [isPanning, setIsPanning] = useState(false);
   
+  const [tableResizeData, setTableResizeData] = useState(null);
+
   const [drawStart, setDrawStart] = useState({ x: 0, y: 0 });
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [tempRect, setTempRect] = useState(null);
@@ -147,6 +170,99 @@ const LabelDesignPage = () => {
   const [masterInputText, setMasterInputText] = useState('');
   const [isMasterFocused, setIsMasterFocused] = useState(false);
 
+  const [expandedTableIds, setExpandedTableIds] = useState([]);
+
+  // =========================================================================
+  // 히스토리(Undo/Redo) 코어 시스템 (Manual Snapshot Architecture)
+  // =========================================================================
+  const historyRef = useRef([]); 
+  const historyPointer = useRef(-1);
+  const [historyUIState, setHistoryUIState] = useState({ step: 0, length: 0 });
+
+  const itemsRef = useRef(items);
+  useEffect(() => { itemsRef.current = items; }, [items]);
+
+  const selectedIdsRef = useRef(selectedIds);
+  useEffect(() => { selectedIdsRef.current = selectedIds; }, [selectedIds]);
+
+  const initItems = useCallback((newItems) => {
+    setItems(newItems);
+    historyRef.current = [newItems];
+    historyPointer.current = 0;
+    setHistoryUIState({ step: 0, length: 1 });
+  }, []);
+
+  useEffect(() => {
+    if (historyRef.current.length === 0) {
+      historyRef.current = [[]]; 
+      historyPointer.current = 0;
+      setHistoryUIState({ step: 0, length: 1 });
+    }
+  }, []);
+
+  const takeSnapshot = useCallback(() => {
+    setItems((prev) => {
+      const hist = historyRef.current;
+      const ptr = historyPointer.current;
+      const last = hist[ptr];
+      
+      if (JSON.stringify(last) !== JSON.stringify(prev)) {
+        const newHist = hist.slice(0, ptr + 1);
+        newHist.push(prev);
+        if (newHist.length > 50) newHist.shift(); 
+        historyRef.current = newHist;
+        historyPointer.current = newHist.length - 1;
+        setHistoryUIState({ step: historyPointer.current, length: newHist.length });
+      }
+      return prev;
+    });
+  }, []);
+
+  const updateItems = useCallback((action, saveSnapshot = true) => {
+    setItems((prev) => {
+      const next = typeof action === 'function' ? action(prev) : action;
+      
+      if (saveSnapshot) {
+        const hist = historyRef.current;
+        const ptr = historyPointer.current;
+        const last = hist[ptr];
+        
+        if (JSON.stringify(last) !== JSON.stringify(next)) {
+          const newHist = hist.slice(0, ptr + 1);
+          newHist.push(next);
+          if (newHist.length > 50) newHist.shift();
+          historyRef.current = newHist;
+          historyPointer.current = newHist.length - 1;
+          setHistoryUIState({ step: historyPointer.current, length: newHist.length });
+        }
+      }
+      return next;
+    });
+  }, []);
+
+  const handleUndo = useCallback(() => {
+    if (historyPointer.current > 0) {
+      historyPointer.current -= 1;
+      setItems(historyRef.current[historyPointer.current]);
+      setSelectedIds([]);
+      setSelectedCells([]);
+      setHistoryUIState({ step: historyPointer.current, length: historyRef.current.length });
+    }
+  }, []);
+
+  const handleRedo = useCallback(() => {
+    if (historyPointer.current < historyRef.current.length - 1) {
+      historyPointer.current += 1;
+      setItems(historyRef.current[historyPointer.current]);
+      setSelectedIds([]);
+      setSelectedCells([]);
+      setHistoryUIState({ step: historyPointer.current, length: historyRef.current.length });
+    }
+  }, []);
+
+  // =========================================================================
+  // Ref 및 개체 매핑
+  // =========================================================================
   const canvasRef = useRef(null);
   const scrollContainerRef = useRef(null);
   const nodeRefs = useRef({}); 
@@ -154,6 +270,16 @@ const LabelDesignPage = () => {
   const imageInputRef = useRef(null);
   const excelLayoutInputRef = useRef(null); 
   
+  // 눈금자(Ruler) 관련 Ref
+  const hRulerRef = useRef(null);
+  const vRulerRef = useRef(null);
+  const hGuideRef = useRef(null);
+  const vGuideRef = useRef(null);
+
+  // ★ 범위 선택(Shift)을 위한 앵커 포인트 Ref 추가
+  const lastSelectedIdRef = useRef(null);
+  const lastSelectedCellRef = useRef(null);
+
   const dragInfoRef = useRef({ 
     startX:           0, 
     startY:           0, 
@@ -177,6 +303,118 @@ const LabelDesignPage = () => {
   );
 
   // =========================================================================
+  // 눈금자(Ruler) 렌더링 로직
+  // =========================================================================
+  const drawRulers = useCallback(() => {
+    if (!hRulerRef.current || !vRulerRef.current || !canvasRef.current || !scrollContainerRef.current) return;
+
+    const hCtx = hRulerRef.current.getContext('2d');
+    const vCtx = vRulerRef.current.getContext('2d');
+    
+    const scrollContainer = scrollContainerRef.current;
+    const canvasEl = canvasRef.current; 
+    
+    const scrollRect = scrollContainer.getBoundingClientRect();
+    const canvasRect = canvasEl.getBoundingClientRect();
+
+    const offsetX = canvasRect.left - scrollRect.left;
+    const offsetY = canvasRect.top - scrollRect.top;
+
+    const hWidth = scrollRect.width;
+    const hHeight = 20;
+    const vWidth = 20;
+    const vHeight = scrollRect.height;
+
+    const dpr = window.devicePixelRatio || 1;
+    
+    hRulerRef.current.width = hWidth * dpr;
+    hRulerRef.current.height = hHeight * dpr;
+    hCtx.scale(dpr, dpr);
+
+    vRulerRef.current.width = vWidth * dpr;
+    vRulerRef.current.height = vHeight * dpr;
+    vCtx.scale(dpr, dpr);
+
+    hCtx.clearRect(0, 0, hWidth, hHeight);
+    vCtx.clearRect(0, 0, vWidth, vHeight);
+
+    hCtx.beginPath();
+    vCtx.beginPath();
+    
+    hCtx.strokeStyle = '#999999';
+    vCtx.strokeStyle = '#999999';
+    hCtx.fillStyle = '#666666';
+    vCtx.fillStyle = '#666666';
+    hCtx.font = '9px "Segoe UI", Arial, sans-serif';
+    vCtx.font = '9px "Segoe UI", Arial, sans-serif';
+    hCtx.textAlign = 'center';
+    hCtx.textBaseline = 'top';
+
+    vCtx.textAlign = 'right';
+    vCtx.textBaseline = 'middle';
+
+    const mmPx = MM_PX_UNIT * zoom;
+    
+    const startMmx = Math.floor(-offsetX / mmPx);
+    const endMmx = startMmx + Math.ceil(hWidth / mmPx);
+
+    for (let i = startMmx - 5; i <= endMmx + 5; i++) {
+       const x = offsetX + (i * mmPx);
+       if (x < -10 || x > hWidth + 10) continue;
+
+       if (i % 10 === 0) {
+         hCtx.moveTo(x, 0); 
+         hCtx.lineTo(x, 20);
+         if (i >= 0) hCtx.fillText((i / 10).toString(), x + 2, 2);
+       } else if (i % 5 === 0) {
+         hCtx.moveTo(x, 10); 
+         hCtx.lineTo(x, 20);
+       } else {
+         hCtx.moveTo(x, 15); 
+         hCtx.lineTo(x, 20);
+       }
+    }
+
+    const startMmy = Math.floor(-offsetY / mmPx);
+    const endMmy = startMmy + Math.ceil(vHeight / mmPx);
+
+    for (let i = startMmy - 5; i <= endMmy + 5; i++) {
+       const y = offsetY + (i * mmPx);
+       if (y < -10 || y > vHeight + 10) continue;
+
+       if (i % 10 === 0) {
+         vCtx.moveTo(0, y); 
+         vCtx.lineTo(20, y);
+         if (i >= 0) {
+           vCtx.save();
+           vCtx.translate(14, y + 2);
+           vCtx.rotate(-Math.PI / 2);
+           vCtx.fillText((i / 10).toString(), 0, 0);
+           vCtx.restore();
+         }
+       } else if (i % 5 === 0) {
+         vCtx.moveTo(10, y); 
+         vCtx.lineTo(20, y);
+       } else {
+         vCtx.moveTo(15, y); 
+         vCtx.lineTo(20, y);
+       }
+    }
+
+    hCtx.stroke();
+    vCtx.stroke();
+  }, [zoom, layout.labelW, layout.labelH]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => drawRulers(), 50);
+    window.addEventListener('resize', drawRulers);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', drawRulers);
+    };
+  }, [drawRulers, layout.labelW, layout.labelH]);
+
+  // =========================================================================
   // 유틸리티 및 계산 로직 (Utility & Calculation)
   // =========================================================================
   const handleToolChange = (tool) => {
@@ -185,6 +423,13 @@ const LabelDesignPage = () => {
       setSelectedIds([]); 
       setSelectedCells([]); 
     }
+  };
+
+  const toggleTableExpand = (e, id) => {
+    e.stopPropagation();
+    setExpandedTableIds(prev => 
+      prev.includes(id) ? prev.filter(tId => tId !== id) : [...prev, id]
+    );
   };
 
   const getMmPos = (e) => {
@@ -259,15 +504,15 @@ const LabelDesignPage = () => {
         }
       });
 
-      setItems((prev) => prev.map((item) => 
+      updateItems((prev) => prev.map((item) => 
         targetPos[item.id] !== undefined 
           ? { ...item, [isH ? 'x' : 'y']: targetPos[item.id] } 
           : item
-      ));
+      ), true);
       return;
     }
 
-    setItems((prev) => prev.map((item) => {
+    updateItems((prev) => prev.map((item) => {
       if (!selectedIds.includes(item.id)) return item;
       
       const { bbox } = bboxes.find(b => b.item.id === item.id);
@@ -285,7 +530,7 @@ const LabelDesignPage = () => {
       }
       
       return { ...item, x: newX, y: newY };
-    }));
+    }), true);
   };
 
   const getKstPreviewDate = (format) => {
@@ -307,7 +552,7 @@ const LabelDesignPage = () => {
     if (selectedIds.length !== 1) return;
     const targetId = selectedIds[0];
 
-    setItems(prev => {
+    updateItems(prev => {
       const index = prev.findIndex(item => item.id === targetId);
       if (index === -1) return prev;
 
@@ -328,12 +573,13 @@ const LabelDesignPage = () => {
       }
 
       return newItems;
-    });
+    }, true);
   };
 
   // =========================================================================
   // 바코드 양방향 동기화 및 데이터 처리 (Data & Barcode Sync)
   // =========================================================================
+  
   const editableMasterData = useMemo(() => {
     const combinedParts = [];
     let hasAnyContent = false;
@@ -344,7 +590,9 @@ const LabelDesignPage = () => {
         if (val !== '') hasAnyContent = true;
         combinedParts.push(val); 
       } else if (i.type === 'table' && i.cells) {
+        const hiddenCells = getHiddenCells(i); 
         i.cells.forEach(cell => {
+          if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
           if (cell.cellType === 'data') {
             let val = cell.dataId || '';
             if (val !== '') hasAnyContent = true;
@@ -385,7 +633,9 @@ const LabelDesignPage = () => {
           combinedParts.push(`${i.prefix || ''}${val}${i.suffix || ''}`);
         }
       } else if (i.type === 'table' && i.cells) {
+        const hiddenCells = getHiddenCells(i); 
         i.cells.forEach(cell => {
+          if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
           if (cell.cellType === 'data' || cell.cellType === 'date') {
             let val = cell.cellType === 'date' 
               ? getKstPreviewDate(cell.content || 'YYYY-MM-DD') 
@@ -422,8 +672,9 @@ const LabelDesignPage = () => {
     items.forEach(i => {
       if (i.type === 'data') totalFields++;
       else if (i.type === 'table' && i.cells) {
+        const hiddenCells = getHiddenCells(i); 
         i.cells.forEach(c => {
-          if (c.cellType === 'data') totalFields++;
+          if (!hiddenCells.has(`${c.row}_${c.col}`) && c.cellType === 'data') totalFields++;
         });
       }
     });
@@ -441,7 +692,7 @@ const LabelDesignPage = () => {
       parts = [newValue];
     }
 
-    setItems((prevItems) => {
+    updateItems((prevItems) => {
       let partIdx = 0;
 
       return prevItems.map((item) => {
@@ -453,8 +704,9 @@ const LabelDesignPage = () => {
           partIdx++;
         } 
         else if (newItem.type === 'table' && newItem.cells) {
+          const hiddenCells = getHiddenCells(newItem); 
           newItem.cells = newItem.cells.map(cell => {
-            if (cell.cellType === 'data') {
+            if (!hiddenCells.has(`${cell.row}_${cell.col}`) && cell.cellType === 'data') {
               let partVal = parts[partIdx] !== undefined ? parts[partIdx] : '';
               partIdx++;
               return { ...cell, dataId: partVal };
@@ -464,12 +716,30 @@ const LabelDesignPage = () => {
         }
         return newItem;
       });
-    });
+    }, false); 
   };
 
   // =========================================================================
-  // 이벤트 핸들러 (Mouse, Drag, Keyboard)
+  // 이벤트 핸들러 (Mouse, Drag, Keyboard, Table Resize)
   // =========================================================================
+
+  const handleTableResizeStart = (e, item, type, index) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setTableResizeData({
+      itemId:      item.id,
+      type:        type,
+      index:       index,
+      startX:      e.clientX,
+      startY:      e.clientY,
+      startRatios: type === 'col' 
+        ? [...(item.colRatios || Array(item.cols).fill(100/item.cols))] 
+        : [...(item.rowRatios || Array(item.rows).fill(100/item.rows))],
+      totalW:      parseFloat(item.width),
+      totalH:      parseFloat(item.height)
+    });
+  };
+
   const handleDragStart = (e, data) => {
     dragInfoRef.current = { 
       startX:           data.x, 
@@ -481,6 +751,8 @@ const LabelDesignPage = () => {
   };
 
   const handleGroupDrag = (e, data) => {
+    if (tableResizeData) return; 
+    
     if (Math.abs(data.x - dragInfoRef.current.startX) > 2 || Math.abs(data.y - dragInfoRef.current.startY) > 2) {
       dragInfoRef.current.isDragging = true;
     }
@@ -491,7 +763,7 @@ const LabelDesignPage = () => {
     const maxH = parseFloat(layout.labelH) || 50;
     let wentOut = false;
 
-    setItems((prev) => prev.map((item) => {
+    updateItems((prev) => prev.map((item) => {
       if (selectedIds.includes(item.id)) {
         const initialItem = dragInfoRef.current.initialItems.find(i => i.id === item.id);
         if (initialItem) {
@@ -504,15 +776,11 @@ const LabelDesignPage = () => {
           if (nextX + bbox.w > maxW) { nextX = maxW - bbox.w; wentOut = true; }
           if (nextY + bbox.h > maxH) { nextY = maxH - bbox.h; wentOut = true; }
           
-          return { 
-            ...item, 
-            x: nextX, 
-            y: nextY 
-          };
+          return { ...item, x: nextX, y: nextY };
         }
       }
       return item;
-    }));
+    }), false);
     
     if (wentOut) {
       dragInfoRef.current.hasAlertedBounds = true;
@@ -520,6 +788,8 @@ const LabelDesignPage = () => {
   };
 
   const handleDragStop = () => {
+    if (tableResizeData) return;
+
     setTimeout(() => { 
       dragInfoRef.current.isDragging = false; 
     }, 100);
@@ -529,7 +799,7 @@ const LabelDesignPage = () => {
       dragInfoRef.current.hasAlertedBounds = false; 
     }
     
-    setItems((prev) => prev.map((item) => {
+    updateItems((prev) => prev.map((item) => {
       if (selectedIds.includes(item.id)) {
         let finalX = applySnap(parseFloat(item.x) || 0, item.useSnap);
         let finalY = applySnap(parseFloat(item.y) || 0, item.useSnap);
@@ -543,51 +813,74 @@ const LabelDesignPage = () => {
         if (finalX + bbox.w > maxW) finalX = maxW - bbox.w;
         if (finalY + bbox.h > maxH) finalY = maxH - bbox.h;
         
-        return { 
-          ...item, 
-          x: finalX, 
-          y: finalY 
-        };
+        return { ...item, x: finalX, y: finalY };
       }
       return item;
-    }));
+    }), true);
   };
 
-  const handleItemClick = (e, id) => {
+  // ★ 변경점: Ctrl(Cmd) 키로 개별 다중 선택, Shift 키로 범위(Range) 선택 로직 적용
+  const handleItemClick = (e, id, fromLayer = false) => {
     e.stopPropagation();
-    if (dragInfoRef.current.isDragging) return;
-    if (activeTool !== 'select') return;
+    if (!fromLayer && dragInfoRef.current.isDragging) return;
+    if (!fromLayer && activeTool !== 'select') return;
 
-    if (e.shiftKey) {
+    const isCtrl = e.ctrlKey || e.metaKey;
+
+    if (isCtrl) {
+      // Ctrl 클릭: 토글(Toggle) 다중 선택
       setSelectedIds((prev) => prev.includes(id) ? prev.filter((sid) => sid !== id) : [...prev, id]);
+      lastSelectedIdRef.current = id;
+    } else if (e.shiftKey && lastSelectedIdRef.current) {
+      // Shift 클릭: 앵커 지점부터 현재까지 연속된 범위 모두 선택
+      const visibleItems = items; // 화면 표시 여부에 무관하게 Layer 순서 기준
+      const idx1 = visibleItems.findIndex(i => i.id === lastSelectedIdRef.current);
+      const idx2 = visibleItems.findIndex(i => i.id === id);
+      if (idx1 !== -1 && idx2 !== -1) {
+        const start = Math.min(idx1, idx2);
+        const end = Math.max(idx1, idx2);
+        const rangeIds = visibleItems.slice(start, end + 1).map(i => i.id);
+        
+        // 기존 선택과 병합(Union)
+        setSelectedIds(prev => Array.from(new Set([...prev, ...rangeIds])));
+      }
     } else {
+      // 일반 클릭: 단일 선택
       setSelectedIds([id]);
+      lastSelectedIdRef.current = id;
       if (targetItem?.id !== id) {
         setSelectedCells([]); 
       }
     }
   };
 
-  const updateItem = (id, fieldOrObj, value) => {
-    setItems((prev) => prev.map((item) => {
+  const updateItem = (id, fieldOrObj, value, saveSnapshot = true) => {
+    updateItems((prev) => prev.map((item) => {
       if (item.id === id) {
-        if (typeof fieldOrObj === 'object') {
-          return { ...item, ...fieldOrObj };
-        }
+        if (typeof fieldOrObj === 'object') return { ...item, ...fieldOrObj };
         return { ...item, [fieldOrObj]: value };
       }
       return item;
-    }));
+    }), saveSnapshot);
   };
 
-  const modifyTableStructure = (tableId, action, targetIndex) => {
-    setItems((prev) => prev.map((item) => {
+  const modifyTableStructure = (tableId, action, targetIndex, targetSpan = 1) => {
+    updateItems((prev) => prev.map((item) => {
       if (item.id !== tableId || item.type !== 'table') return item;
       
-      let { rows, cols, cells } = item;
+      let { rows, cols, cells, width, height } = item;
       let newCells = [...cells];
+      
+      let rowRatios = item.rowRatios ? [...item.rowRatios] : Array(rows).fill(100/rows);
+      let colRatios = item.colRatios ? [...item.colRatios] : Array(cols).fill(100/cols);
+
+      let newWidth = parseFloat(width);
+      let newHeight = parseFloat(height);
 
       if (action === 'insert-row') {
+        const avgRatio = 100 / rows;
+        newHeight = newHeight * ((100 + avgRatio) / 100); 
+
         newCells = newCells.map(c => {
           if (c.row >= targetIndex) return { ...c, row: c.row + 1 };
           if (c.row < targetIndex && c.row + (c.rowSpan || 1) > targetIndex) {
@@ -607,25 +900,51 @@ const LabelDesignPage = () => {
             showPrefixSuffixOnLabel: true 
           });
         }
+        rowRatios.splice(targetIndex, 0, avgRatio);
         rows += 1;
       } 
       else if (action === 'delete-row') {
-        if (rows <= 1) {
-          showAlert('안내', 'warning', '최소 1개의 행은 유지해야 합니다.');
+        if (rows <= targetSpan) {
+          showAlert('안내', 'warning', '모든 행을 삭제할 수 없습니다.');
           return item;
         }
-        newCells = newCells
-          .filter(c => c.row !== targetIndex)
-          .map(c => {
-            if (c.row > targetIndex) return { ...c, row: c.row - 1 };
-            if (c.row < targetIndex && c.row + (c.rowSpan || 1) > targetIndex) {
-              return { ...c, rowSpan: (c.rowSpan || 1) - 1 };
+
+        const deletedRatio = rowRatios.slice(targetIndex, targetIndex + targetSpan).reduce((a, b) => Number(a) + Number(b), 0);
+        newHeight = newHeight * ((100 - deletedRatio) / 100);
+
+        let updatedCells = [];
+        cells.forEach(c => {
+          let rSpan = c.rowSpan || 1;
+          let cStart = c.row;
+          let cEnd = c.row + rSpan - 1;
+          let dStart = targetIndex;
+          let dEnd = targetIndex + targetSpan - 1;
+
+          if (cEnd < dStart) {
+            updatedCells.push(c);
+          } else if (cStart > dEnd) {
+            updatedCells.push({ ...c, row: c.row - targetSpan });
+          } else {
+            let overlapStart = Math.max(cStart, dStart);
+            let overlapEnd = Math.min(cEnd, dEnd);
+            let overlapCount = overlapEnd - overlapStart + 1;
+            
+            let newSpan = rSpan - overlapCount;
+            if (newSpan > 0) {
+              let newRow = cStart < dStart ? cStart : dStart;
+              updatedCells.push({ ...c, row: newRow, rowSpan: newSpan });
             }
-            return c;
-          });
-        rows -= 1;
+          }
+        });
+        newCells = updatedCells;
+
+        rowRatios.splice(targetIndex, targetSpan);
+        rows -= targetSpan;
       } 
       else if (action === 'insert-col') {
+        const avgRatio = 100 / cols;
+        newWidth = newWidth * ((100 + avgRatio) / 100); 
+
         newCells = newCells.map(c => {
           if (c.col >= targetIndex) return { ...c, col: c.col + 1 };
           if (c.col < targetIndex && c.col + (c.colSpan || 1) > targetIndex) {
@@ -645,40 +964,73 @@ const LabelDesignPage = () => {
             showPrefixSuffixOnLabel: true 
           });
         }
+        colRatios.splice(targetIndex, 0, avgRatio);
         cols += 1;
       } 
       else if (action === 'delete-col') {
-        if (cols <= 1) {
-          showAlert('안내', 'warning', '최소 1개의 열은 유지해야 합니다.');
+        if (cols <= targetSpan) {
+          showAlert('안내', 'warning', '모든 열을 삭제할 수 없습니다.');
           return item;
         }
-        newCells = newCells
-          .filter(c => c.col !== targetIndex)
-          .map(c => {
-            if (c.col > targetIndex) return { ...c, col: c.col - 1 };
-            if (c.col < targetIndex && c.col + (c.colSpan || 1) > targetIndex) {
-              return { ...c, colSpan: (c.colSpan || 1) - 1 };
+
+        const deletedRatio = colRatios.slice(targetIndex, targetIndex + targetSpan).reduce((a, b) => Number(a) + Number(b), 0);
+        newWidth = newWidth * ((100 - deletedRatio) / 100);
+
+        let updatedCells = [];
+        cells.forEach(c => {
+          let cSpan = c.colSpan || 1;
+          let cStart = c.col;
+          let cEnd = c.col + cSpan - 1;
+          let dStart = targetIndex;
+          let dEnd = targetIndex + targetSpan - 1;
+
+          if (cEnd < dStart) {
+            updatedCells.push(c);
+          } else if (cStart > dEnd) {
+            updatedCells.push({ ...c, col: c.col - targetSpan });
+          } else {
+            let overlapStart = Math.max(cStart, dStart);
+            let overlapEnd = Math.min(cEnd, dEnd);
+            let overlapCount = overlapEnd - overlapStart + 1;
+            
+            let newSpan = cSpan - overlapCount;
+            if (newSpan > 0) {
+              let newCol = cStart < dStart ? cStart : dStart;
+              updatedCells.push({ ...c, col: newCol, colSpan: newSpan });
             }
-            return c;
-          });
-        cols -= 1;
+          }
+        });
+        newCells = updatedCells;
+
+        colRatios.splice(targetIndex, targetSpan);
+        cols -= targetSpan;
       }
+
+      const sumRow = rowRatios.reduce((a, b) => Number(a) + Number(b), 0) || 100;
+      rowRatios = rowRatios.map(r => (Number(r) / sumRow) * 100);
+
+      const sumCol = colRatios.reduce((a, b) => Number(a) + Number(b), 0) || 100;
+      colRatios = colRatios.map(c => (Number(c) / sumCol) * 100);
 
       return { 
         ...item, 
+        width: Math.max(1, newWidth), 
+        height: Math.max(1, newHeight), 
         rows, 
         cols, 
-        cells: newCells 
+        cells: newCells,
+        rowRatios,
+        colRatios
       };
-    }));
+    }), true);
 
     if (action.startsWith('delete')) {
       setSelectedCells([]); 
     }
   };
 
-  const updateTableCell = (id, row, col, updates) => {
-    setItems(prev => prev.map(item => {
+  const updateTableCell = (id, row, col, updates, saveSnapshot = true) => {
+    updateItems(prev => prev.map(item => {
       if (item.id === id && item.type === 'table') {
         const newCells = item.cells.map(cell => {
           if (cell.row === row && cell.col === col) {
@@ -692,20 +1044,14 @@ const LabelDesignPage = () => {
             if (safeUpdates.cellType === 'date' && cell.cellType !== 'date') {
               safeUpdates.content = 'YYYY-MM-DD';
             }
-            return { 
-              ...cell, 
-              ...safeUpdates 
-            };
+            return { ...cell, ...safeUpdates };
           }
           return cell;
         });
-        return { 
-          ...item, 
-          cells: newCells 
-        };
+        return { ...item, cells: newCells };
       }
       return item;
-    }));
+    }), saveSnapshot);
   };
 
   const handleMergeCells = () => {
@@ -719,39 +1065,23 @@ const LabelDesignPage = () => {
     const rowSpan = maxRow - minRow + 1;
     const colSpan = maxCol - minCol + 1;
 
-    setItems((prev) => prev.map((item) => {
+    updateItems((prev) => prev.map((item) => {
       if (item.id === targetItem.id) {
         const mergedCells = item.cells.map(cell => {
           if (cell.row === minRow && cell.col === minCol) {
-            return { 
-              ...cell, 
-              rowSpan: rowSpan, 
-              colSpan: colSpan 
-            };
+            return { ...cell, rowSpan: rowSpan, colSpan: colSpan };
           }
           if (cell.row >= minRow && cell.row <= maxRow && cell.col >= minCol && cell.col <= maxCol) {
-            return { 
-              ...cell, 
-              rowSpan: 1, 
-              colSpan: 1 
-            };
+            return { ...cell, rowSpan: 1, colSpan: 1 };
           }
           return cell;
         });
-        return { 
-          ...item, 
-          cells: mergedCells 
-        };
+        return { ...item, cells: mergedCells };
       }
       return item;
-    }));
+    }), true);
 
-    setSelectedCells([{ 
-      itemId: targetItem.id, 
-      row:    minRow, 
-      col:    minCol 
-    }]);
-    
+    setSelectedCells([{ itemId: targetItem.id, row: minRow, col: minCol }]);
     showAlert("병합 완료", "success", "선택된 영역이 성공적으로 병합되었습니다.");
   };
 
@@ -761,44 +1091,101 @@ const LabelDesignPage = () => {
     const targetCell = targetItem.cells.find(c => c.row === selectedCells[0].row && c.col === selectedCells[0].col);
     if (!targetCell || ((targetCell.rowSpan || 1) <= 1 && (targetCell.colSpan || 1) <= 1)) return;
 
-    setItems((prev) => prev.map((item) => {
+    updateItems((prev) => prev.map((item) => {
       if (item.id === targetItem.id) {
         const unmergedCells = item.cells.map(cell => {
           if (cell.row === targetCell.row && cell.col === targetCell.col) {
-            return { 
-              ...cell, 
-              rowSpan: 1, 
-              colSpan: 1 
-            };
+            return { ...cell, rowSpan: 1, colSpan: 1 };
           }
           return cell;
         });
-        return { 
-          ...item, 
-          cells: unmergedCells 
-        };
+        return { ...item, cells: unmergedCells };
       }
       return item;
-    }));
+    }), true);
     
     showAlert("병합 해제", "success", "병합이 정상적으로 해제되었습니다.");
   };
 
   const deleteSelectedItems = useCallback(() => {
-    if (selectedIds.length > 0) {
-      setItems((prev) => prev.filter((i) => !selectedIds.includes(i.id)));
+    const sIds = selectedIdsRef.current;
+    if (sIds.length > 0) {
+      updateItems((prev) => prev.filter((i) => !sIds.includes(i.id)), true);
       setSelectedIds([]);
       setSelectedCells([]);
     }
-  }, [selectedIds]);
+  }, [updateItems]);
 
   useEffect(() => {
     const handleGlobalMouseMove = (e) => {
       const maxW = parseFloat(layout.labelW) || 100;
       const maxH = parseFloat(layout.labelH) || 50;
+      
+      const currentItems = itemsRef.current;
+      const currentSelectedIds = selectedIdsRef.current;
 
-      if (isResizing && selectedIds.length === 1) {
-        const item = items.find((i) => i.id === selectedIds[0]);
+      if (hGuideRef.current && vGuideRef.current && scrollContainerRef.current) {
+        const scrollRect = scrollContainerRef.current.getBoundingClientRect();
+        const mouseX = e.clientX - scrollRect.left;
+        const mouseY = e.clientY - scrollRect.top;
+
+        if (mouseX >= 0 && mouseX <= scrollRect.width && mouseY >= 0 && mouseY <= scrollRect.height) {
+          hGuideRef.current.style.transform = `translateX(${mouseX}px)`;
+          vGuideRef.current.style.transform = `translateY(${mouseY}px)`;
+          hGuideRef.current.style.display = 'block';
+          vGuideRef.current.style.display = 'block';
+        } else {
+          hGuideRef.current.style.display = 'none';
+          vGuideRef.current.style.display = 'none';
+        }
+      }
+
+      if (tableResizeData) {
+        const { itemId, type, index, startX, startY, startRatios, totalW, totalH } = tableResizeData;
+        const newRatios = [...startRatios];
+        
+        if (type === 'col') {
+          const dx = (e.clientX - startX) / zoom / MM_PX_UNIT; 
+          const deltaPct = (dx / totalW) * 100;
+          let newLeft = startRatios[index] + deltaPct;
+          let newRight = startRatios[index + 1] - deltaPct;
+          
+          if (newLeft < 2) {
+            newRight -= (2 - newLeft);
+            newLeft = 2;
+          }
+          if (newRight < 2) {
+            newLeft -= (2 - newRight);
+            newRight = 2;
+          }
+          newRatios[index] = newLeft;
+          newRatios[index + 1] = newRight;
+          
+          updateItems(prev => prev.map(item => item.id === itemId ? { ...item, colRatios: newRatios } : item), false);
+        } else {
+          const dy = (e.clientY - startY) / zoom / MM_PX_UNIT; 
+          const deltaPct = (dy / totalH) * 100;
+          let newTop = startRatios[index] + deltaPct;
+          let newBottom = startRatios[index + 1] - deltaPct;
+          
+          if (newTop < 2) {
+            newBottom -= (2 - newTop);
+            newTop = 2;
+          }
+          if (newBottom < 2) {
+            newTop -= (2 - newBottom);
+            newBottom = 2;
+          }
+          newRatios[index] = newTop;
+          newRatios[index + 1] = newBottom;
+          
+          updateItems(prev => prev.map(item => item.id === itemId ? { ...item, rowRatios: newRatios } : item), false);
+        }
+        return; 
+      }
+
+      if (isResizing && currentSelectedIds.length === 1) {
+        const item = currentItems.find((i) => i.id === currentSelectedIds[0]);
         if (!item) return;
         
         const currentPos = getMmPos(e);
@@ -809,24 +1196,15 @@ const LabelDesignPage = () => {
         if ((parseFloat(item.y)||0) + newH > maxH) newH = maxH - (parseFloat(item.y)||0);
 
         if (item.type === 'line') {
-           updateItem(item.id, { 
-             width:  Math.max(0.1, newW), 
-             height: Math.max(0.1, newH) 
-           });
+           updateItems(prev => prev.map(i => i.id === item.id ? { ...i, width: Math.max(0.1, newW), height: Math.max(0.1, newH) } : i), false);
         } else if (item.type === 'qrcode') {
            const availX = maxW - (parseFloat(item.x)||0); 
            const availY = maxH - (parseFloat(item.y)||0);
            let size = Math.max(0.1, Math.max(newW, newH));
            size = Math.min(size, availX, availY);
-           updateItem(item.id, { 
-             width:  size, 
-             height: size 
-           });
+           updateItems(prev => prev.map(i => i.id === item.id ? { ...i, width: size, height: size } : i), false);
         } else {
-           updateItem(item.id, { 
-             width:  Math.max(0.1, newW), 
-             height: Math.max(0.1, newH) 
-           });
+           updateItems(prev => prev.map(i => i.id === item.id ? { ...i, width: Math.max(0.1, newW), height: Math.max(0.1, newH) } : i), false);
         }
       }
       
@@ -875,13 +1253,37 @@ const LabelDesignPage = () => {
     };
 
     const handleGlobalMouseUp = () => {
+      if (hGuideRef.current) hGuideRef.current.style.display = 'none';
+      if (vGuideRef.current) vGuideRef.current.style.display = 'none';
+
+      if (isResizing || tableResizeData) {
+        takeSnapshot();
+      }
       setIsResizing(false); 
       setIsPanning(false);
+      setTableResizeData(null); 
     };
 
     const handleKeyDown = (e) => {
-      if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
-      if (e.key === 'Delete' || e.key === 'Backspace') deleteSelectedItems();
+      if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+      
+      const isMac = navigator.userAgent.toUpperCase().indexOf('MAC') >= 0;
+      const cmdKey = isMac ? e.metaKey : e.ctrlKey;
+
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        deleteSelectedItems();
+      } 
+      else if (cmdKey && (e.key === 'z' || e.key === 'Z')) {
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+        e.preventDefault();
+      } else if (cmdKey && (e.key === 'y' || e.key === 'Y')) {
+        handleRedo();
+        e.preventDefault();
+      }
     };
 
     window.addEventListener('mousemove', handleGlobalMouseMove);
@@ -894,13 +1296,18 @@ const LabelDesignPage = () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
   }, [
-    isResizing, isDrawing, isPanning, selectedIds, 
-    items, zoom, showGrid, snapToGrid, gridSize, 
-    drawStart, panStart, deleteSelectedItems, activeTool, layout
+    isResizing, isDrawing, isPanning, 
+    zoom, showGrid, snapToGrid, gridSize, 
+    drawStart, panStart, deleteSelectedItems, activeTool, layout,
+    tableResizeData, updateItems, takeSnapshot, handleUndo, handleRedo
   ]);
 
   const handleMouseDownCanvas = (e) => {
-    if (e.target === canvasRef.current || e.target === scrollContainerRef.current || e.target === scrollContainerRef.current.firstChild) {
+    if (
+      e.target.id === 'design-scroll-container' || 
+      e.target.id === 'design-canvas-wrapper' || 
+      e.target.id === 'design-canvas-paper'
+    ) {
       setSelectedIds([]); 
       setSelectedCells([]); 
     }
@@ -914,7 +1321,7 @@ const LabelDesignPage = () => {
       return;
     }
     
-    if (activeTool === 'select' || isResizing) return;
+    if (activeTool === 'select' || isResizing || tableResizeData) return;
     
     const pos = getMmPos(e);
     const maxW = parseFloat(layout.labelW) || 100;
@@ -958,7 +1365,7 @@ const LabelDesignPage = () => {
       const newItem = {
         id:                      newId, 
         type:                    activeTool, 
-        label:                   `${activeTool}_${items.length + 1}`,
+        label:                   `${activeTool}_${itemsRef.current.length + 1}`,
         content:                 activeTool === 'text' ? 'TEXT' : activeTool === 'image' ? '' : activeTool === 'date' ? 'YYYY-MM-DD' : 'DATA',
         x:                       applySnap(tempRect.x, true), 
         y:                       applySnap(tempRect.y, true),
@@ -970,10 +1377,10 @@ const LabelDesignPage = () => {
         fontStyle:               'normal', 
         barcodeType:             'CODE128', 
         qrErrorLevel:            'M',
-        borderWidth:             0.5, // 기본 선 두께
+        borderWidth:             0.5, 
         transparent:             activeTool === 'line' ? false : true,
         fill:                    '#ffffff',
-        stroke:                  '#000000', // ★ 신규 객체 생성 시 선 색상은 무조건 검은색 적용
+        stroke:                  '#000000', 
         visible:                 true, 
         useSnap:                 true, 
         showBorder:              true,
@@ -984,15 +1391,17 @@ const LabelDesignPage = () => {
         showPrefixSuffixOnLabel: true,
         rows:                    activeTool === 'table' ? 2 : undefined,
         cols:                    activeTool === 'table' ? 2 : undefined,
+        rowRatios:               activeTool === 'table' ? [50, 50] : undefined, 
+        colRatios:               activeTool === 'table' ? [50, 50] : undefined,
         cells:                   activeTool === 'table' ? [
-           { row: 0, col: 0, rowSpan: 1, colSpan: 1, cellType: 'text', content: 'TEXT', dataId: '', prefix: '', suffix: '', showPrefixSuffixOnLabel: true },
-           { row: 0, col: 1, rowSpan: 1, colSpan: 1, cellType: 'text', content: 'TEXT', dataId: '', prefix: '', suffix: '', showPrefixSuffixOnLabel: true },
-           { row: 1, col: 0, rowSpan: 1, colSpan: 1, cellType: 'text', content: 'TEXT', dataId: '', prefix: '', suffix: '', showPrefixSuffixOnLabel: true },
-           { row: 1, col: 1, rowSpan: 1, colSpan: 1, cellType: 'text', content: 'TEXT', dataId: '', prefix: '', suffix: '', showPrefixSuffixOnLabel: true }
+           { row: 0, col: 0, rowSpan: 1, colSpan: 1, cellType: 'text', content: 'TEXT', dataId: '', prefix: '', suffix: '', showPrefixSuffixOnLabel: true, cellName: '', fontSize: '' },
+           { row: 0, col: 1, rowSpan: 1, colSpan: 1, cellType: 'text', content: 'TEXT', dataId: '', prefix: '', suffix: '', showPrefixSuffixOnLabel: true, cellName: '', fontSize: '' },
+           { row: 1, col: 0, rowSpan: 1, colSpan: 1, cellType: 'text', content: 'TEXT', dataId: '', prefix: '', suffix: '', showPrefixSuffixOnLabel: true, cellName: '', fontSize: '' },
+           { row: 1, col: 1, rowSpan: 1, colSpan: 1, cellType: 'text', content: 'TEXT', dataId: '', prefix: '', suffix: '', showPrefixSuffixOnLabel: true, cellName: '', fontSize: '' }
         ] : undefined
       };
       
-      setItems([newItem, ...items]);
+      updateItems((prev) => [newItem, ...prev], true);
       setSelectedIds([newId]);
     }
     
@@ -1104,7 +1513,9 @@ const LabelDesignPage = () => {
               barcodeType:             'CODE128',
               qrErrorLevel:            'M',
               displayValue:            true,
-              showPrefixSuffixOnLabel: true
+              showPrefixSuffixOnLabel: true,
+              cellName:                '',
+              fontSize:                ''
             });
           }
         }
@@ -1136,10 +1547,12 @@ const LabelDesignPage = () => {
           showBorder:   true,
           rows:         numRows,
           cols:         numCols,
+          rowRatios:    Array(numRows).fill(100 / numRows), 
+          colRatios:    Array(numCols).fill(100 / numCols),
           cells:        newCells
         };
 
-        setItems([newTableItem]); 
+        initItems([newTableItem]); 
         setTemplateName(file.name);
         showAlert("파싱 완료", "success", "엑셀의 데이터 영역만 추출하여 표를 생성했습니다.");
 
@@ -1151,19 +1564,92 @@ const LabelDesignPage = () => {
     excelLayoutInputRef.current.value = null; 
   };
 
-  const handleExportJson = () => {
+  const handleExport = async () => {
+    if (!templateName) {
+      return showAlert("확인", "warning", "내보낼 양식 이름을 먼저 입력하세요.");
+    }
+    
+    const el = canvasRef.current;
+    if (!el) return;
+
+    const previousSelection = selectedIds;
+    setSelectedIds([]);
+    setSelectedCells([]);
+    
+    await new Promise(r => setTimeout(r, 100));
+
+    const originalBg = el.style.backgroundImage;
+    const originalBoxShadow = el.style.boxShadow;
+    el.style.backgroundImage = 'none';
+    el.style.boxShadow = 'none';
+
+    let canvas;
+    try {
+      canvas = await html2canvas(el, { 
+        scale:           3, 
+        useCORS:         true, 
+        backgroundColor: '#ffffff' 
+      });
+    } catch(err) {
+      el.style.backgroundImage = originalBg;
+      el.style.boxShadow = originalBoxShadow;
+      setSelectedIds(previousSelection);
+      return showAlert("오류", "error", "미리보기 이미지 생성 중 문제가 발생했습니다.");
+    }
+
+    el.style.backgroundImage = originalBg;
+    el.style.boxShadow = originalBoxShadow;
+    setSelectedIds(previousSelection);
+
     const data = { 
       templateName, 
       layout, 
       items 
     };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    
-    link.href = url; 
-    link.download = `${templateName || 'label'}.json`; 
-    link.click();
+    const jsonString = JSON.stringify(data, null, 2);
+
+    if (window.showDirectoryPicker) {
+      try {
+        const dirHandle = await window.showDirectoryPicker({ mode: 'readwrite' });
+        
+        const jsonFileHandle = await dirHandle.getFileHandle(`${templateName}.json`, { create: true });
+        const jsonWritable = await jsonFileHandle.createWritable();
+        await jsonWritable.write(new Blob([jsonString], { type: 'application/json' }));
+        await jsonWritable.close();
+
+        canvas.toBlob(async (blob) => {
+          const imgFileHandle = await dirHandle.getFileHandle(`${templateName}.png`, { create: true });
+          const imgWritable = await imgFileHandle.createWritable();
+          await imgWritable.write(blob);
+          await imgWritable.close();
+          showAlert("성공", "success", "선택하신 폴더에 JSON 양식과 라벨 미리보기(PNG) 이미지가 함께 저장되었습니다.");
+        }, 'image/png');
+        
+        return; 
+      } catch (pickerErr) {
+        if (pickerErr.name === 'AbortError') return; 
+        console.warn("폴더 지정 권한 오류, 브라우저 기본 다운로드로 Fallback합니다.", pickerErr);
+      }
+    }
+
+    const downloadFile = (url, filename) => {
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    };
+
+    const jsonBlob = new Blob([jsonString], { type: 'application/json' });
+    const jsonUrl = URL.createObjectURL(jsonBlob);
+    downloadFile(jsonUrl, `${templateName}.json`);
+    URL.revokeObjectURL(jsonUrl);
+
+    const imgUrl = canvas.toDataURL('image/png');
+    downloadFile(imgUrl, `${templateName}.png`);
+
+    showAlert("성공", "success", "JSON 양식과 미리보기(PNG)가 기본 다운로드 폴더에 저장되었습니다.");
   };
 
   const handleImportJson = (e) => {
@@ -1177,7 +1663,7 @@ const LabelDesignPage = () => {
         setTemplateId(null); 
         setTemplateName(json.templateName || 'Imported');
         setLayout(json.layout || { labelW: '100', labelH: '50', delimiter: '', excelMapping: {} }); 
-        setItems(json.items || []);
+        initItems(json.items || []);
         showAlert("성공", "success", "파일을 불러왔습니다.");
       } catch (err) { 
         showAlert("오류", "error", "올바른 JSON 파일이 아닙니다."); 
@@ -1228,7 +1714,7 @@ const LabelDesignPage = () => {
     if (!file || selectedIds.length !== 1) return;
     
     const reader = new FileReader();
-    reader.onload = (ev) => updateItem(selectedIds[0], 'src', ev.target.result);
+    reader.onload = (ev) => updateItem(selectedIds[0], 'src', ev.target.result, false);
     reader.readAsDataURL(file); 
     e.target.value = null;
   };
@@ -1259,7 +1745,7 @@ const LabelDesignPage = () => {
           zIndex:          12 
         }}
       >
-        <Tooltip title="선택 (Del삭제 / Shift다중)" placement="right">
+        <Tooltip title="선택 (Ctrl: 다중, Shift: 범위)" placement="right">
           <IconButton 
             color={activeTool === 'select' ? 'primary' : 'inherit'} 
             onClick={() => handleToolChange('select')}
@@ -1405,6 +1891,31 @@ const LabelDesignPage = () => {
           </Stack>
           
           <Stack direction="row" spacing={1}>
+            <Tooltip title="실행 취소 (Ctrl+Z)">
+              <IconButton 
+                size="small" 
+                onClick={handleUndo} 
+                disabled={historyUIState.step <= 0}
+              >
+                <UndoIcon />
+              </IconButton>
+            </Tooltip>
+            <Tooltip title="다시 실행 (Ctrl+Y)">
+              <IconButton 
+                size="small" 
+                onClick={handleRedo} 
+                disabled={historyUIState.step >= historyUIState.length - 1}
+              >
+                <RedoIcon />
+              </IconButton>
+            </Tooltip>
+            
+            <Divider 
+              orientation="vertical" 
+              flexItem 
+              sx={{ mx: 0.5 }} 
+            />
+
             <Button 
               size="small" 
               variant="outlined" 
@@ -1450,14 +1961,15 @@ const LabelDesignPage = () => {
             >
               파일열기
             </Button>
+            
             <Button 
               size="small" 
               variant="outlined" 
               color="info" 
               startIcon={<FileDownloadIcon />} 
-              onClick={handleExportJson}
+              onClick={handleExport}
             >
-              내보내기
+              내보내기 (JSON+PNG)
             </Button>
             <Button 
               size="small" 
@@ -1482,21 +1994,64 @@ const LabelDesignPage = () => {
           sx={{ 
             flex:     1, 
             position: 'relative', 
-            overflow: 'hidden' 
+            overflow: 'hidden',
+            backgroundColor: (theme) => theme.palette.layout.design.canvasBg
           }}
         >
+          {/* 눈금자 교차점 */}
           <Box 
+            sx={{ 
+              position: 'absolute', top: 0, left: 0, width: 20, height: 20, 
+              backgroundColor: '#e8e8e8', borderBottom: '1px solid #ccc', borderRight: '1px solid #ccc', zIndex: 20 
+            }} 
+          />
+          
+          {/* 가로 눈금자 */}
+          <Box 
+            sx={{ 
+              position: 'absolute', top: 0, left: 20, right: 0, height: 20, 
+              backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', zIndex: 15, overflow: 'hidden' 
+            }}
+          >
+            <canvas ref={hRulerRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+            <Box 
+              ref={hGuideRef} 
+              sx={{ 
+                position: 'absolute', top: 0, bottom: 0, width: '1px', 
+                backgroundColor: 'red', display: 'none', pointerEvents: 'none', zIndex: 16 
+              }} 
+            />
+          </Box>
+
+          {/* 세로 눈금자 */}
+          <Box 
+            sx={{ 
+              position: 'absolute', top: 20, left: 0, bottom: 0, width: 20, 
+              backgroundColor: '#f5f5f5', borderRight: '1px solid #ccc', zIndex: 15, overflow: 'hidden' 
+            }}
+          >
+            <canvas ref={vRulerRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+            <Box 
+              ref={vGuideRef} 
+              sx={{ 
+                position: 'absolute', left: 0, right: 0, height: '1px', 
+                backgroundColor: 'red', display: 'none', pointerEvents: 'none', zIndex: 16 
+              }} 
+            />
+          </Box>
+
+          {/* 캔버스 배경 스크롤 영역 */}
+          <Box 
+            id="design-scroll-container"
             ref={scrollContainerRef} 
+            onScroll={drawRulers}
             sx={{ 
               position:        'absolute', 
-              top:             0, 
-              left:            0, 
+              top:             20, 
+              left:            20, 
               right:           0, 
               bottom:          0, 
               overflow:        'auto', 
-              display:         'flex', 
-              p:               10, 
-              backgroundColor: (theme) => theme.palette.layout.design.canvasBg, 
               cursor:          activeTool === 'pan' ? (isPanning ? 'grabbing' : 'grab') : 'default', 
               userSelect:      'none', 
               WebkitUserSelect:'none' 
@@ -1505,480 +2060,597 @@ const LabelDesignPage = () => {
             onMouseUp={handleMouseUpCanvas} 
             onWheel={handleWheelZoom}
           >
-            <Box 
-              sx={{ 
-                margin:     'auto', 
-                position:   'relative', 
-                width:      `${(parseFloat(layout.labelW)||100) * MM_PX_UNIT * zoom}px`, 
-                height:     `${(parseFloat(layout.labelH)||50) * MM_PX_UNIT * zoom}px`, 
-                transition: 'width 0.1s, height 0.1s' 
+            <Box
+              id="design-canvas-wrapper"
+              sx={{
+                minWidth:       '100%',
+                minHeight:      '100%',
+                width:          'max-content',
+                height:         'max-content',
+                display:        'flex',
+                alignItems:     'center',
+                justifyContent: 'center',
+                p:              10 
               }}
             >
               <Box 
+                id="design-canvas-container"
                 ref={canvasRef} 
                 sx={{ 
-                  width:           `${parseFloat(layout.labelW)||100}mm`, 
-                  height:          `${parseFloat(layout.labelH)||50}mm`, 
-                  backgroundColor: '#fff', 
-                  position:        'absolute', 
-                  top:             0, 
-                  left:            0, 
-                  boxShadow:       '0 10px 30px rgba(0,0,0,0.3)', 
-                  transform:       `scale(${zoom})`, 
-                  transformOrigin: '0 0', 
-                  ...(showGrid && { 
-                    backgroundImage:    `radial-gradient(circle at 0 0, rgba(0,0,0,0.3) 1px, transparent 1px)`, 
-                    backgroundSize:     `${safeGridSize * MM_PX_UNIT}px ${safeGridSize * MM_PX_UNIT}px`, 
-                    backgroundPosition: `0 0` 
-                  }) 
+                  position:   'relative', 
+                  width:      `${(parseFloat(layout.labelW)||100) * MM_PX_UNIT * zoom}px`, 
+                  height:     `${(parseFloat(layout.labelH)||50) * MM_PX_UNIT * zoom}px`, 
+                  transition: 'width 0.1s, height 0.1s' 
                 }}
               >
-                {tempRect && (
-                  <Box 
-                    sx={{ 
-                      position:        'absolute', 
-                      left:            `${tempRect.x}mm`, 
-                      top:             `${tempRect.y}mm`, 
-                      width:           `${tempRect.w}mm`, 
-                      height:          `${tempRect.h}mm`, 
-                      border:          '1px dashed #1976d2', 
-                      backgroundColor: 'rgba(25, 118, 210, 0.1)', 
-                      zIndex:          1000 
-                    }} 
-                  />
-                )}
-                
-                {items.filter(i => i.visible).map((item) => {
-                  if (!nodeRefs.current[item.id]) nodeRefs.current[item.id] = createRef();
-                  const isSel = selectedIds.includes(item.id);
-                  const isTextType = ['text', 'data', 'date'].includes(item.type);
-                  
-                  const hiddenCells = new Set();
-                  if (item.type === 'table' && item.cells) {
-                    item.cells.forEach(c => {
-                      if ((c.rowSpan || 1) > 1 || (c.colSpan || 1) > 1) {
-                        for (let r = 0; r < (c.rowSpan || 1); r++) {
-                          for (let col = 0; col < (c.colSpan || 1); col++) {
-                            if (r === 0 && col === 0) continue;
-                            hiddenCells.add(`${c.row + r}_${c.col + col}`);
-                          }
-                        }
-                      }
-                    });
-                  }
-
-                  return (
-                    <Draggable 
-                      key={item.id} 
-                      nodeRef={nodeRefs.current[item.id]} 
-                      disabled={activeTool !== 'select' || isResizing || isPanning || !isSel} 
-                      scale={zoom} 
-                      position={{ 
-                        x: (parseFloat(item.x) || 0) * MM_PX_UNIT, 
-                        y: (parseFloat(item.y) || 0) * MM_PX_UNIT 
+                <Box 
+                  id="design-canvas-paper"
+                  sx={{ 
+                    width:           `${parseFloat(layout.labelW)||100}mm`, 
+                    height:          `${parseFloat(layout.labelH)||50}mm`, 
+                    backgroundColor: '#fff', 
+                    position:        'absolute', 
+                    top:             0, 
+                    left:            0, 
+                    boxShadow:       '0 10px 30px rgba(0,0,0,0.3)', 
+                    transform:       `scale(${zoom})`, 
+                    transformOrigin: '0 0', 
+                    ...(showGrid && { 
+                      backgroundImage:    `radial-gradient(circle at 0 0, rgba(0,0,0,0.3) 1px, transparent 1px)`, 
+                      backgroundSize:     `${safeGridSize * MM_PX_UNIT}px ${safeGridSize * MM_PX_UNIT}px`, 
+                      backgroundPosition: `0 0` 
+                    }) 
+                  }}
+                >
+                  {tempRect && (
+                    <Box 
+                      sx={{ 
+                        position:        'absolute', 
+                        left:            `${tempRect.x}mm`, 
+                        top:             `${tempRect.y}mm`, 
+                        width:           `${tempRect.w}mm`, 
+                        height:          `${tempRect.h}mm`, 
+                        border:          '1px dashed #1976d2', 
+                        backgroundColor: 'rgba(25, 118, 210, 0.1)', 
+                        zIndex:          1000 
                       }} 
-                      onStart={handleDragStart} 
-                      onDrag={handleGroupDrag} 
-                      onStop={handleDragStop}
-                    >
-                      <div 
-                        ref={nodeRefs.current[item.id]} 
-                        onClick={(e) => handleItemClick(e, item.id)} 
-                        style={{ 
-                          position:         'absolute', 
-                          cursor:           activeTool === 'select' ? 'move' : 'inherit', 
-                          zIndex:           isSel ? 9999 : (items.length - items.findIndex(i => i.id === item.id)), 
-                          userSelect:       'none', 
-                          WebkitUserSelect: 'none' 
-                        }}
+                    />
+                  )}
+                  
+                  {items.filter(i => i.visible).map((item) => {
+                    if (!nodeRefs.current[item.id]) nodeRefs.current[item.id] = createRef();
+                    const isSel = selectedIds.includes(item.id);
+                    const isTextType = ['text', 'data', 'date'].includes(item.type);
+                    
+                    const hiddenCells = getHiddenCells(item);
+
+                    // ★ CSS Grid 'fr' 및 SVG 비율 100% 강제 동기화 렌더링 로직 (Auto-Fill)
+                    const colRatios = item.colRatios || Array(item.cols).fill(100/(item.cols||1));
+                    const rowRatios = item.rowRatios || Array(item.rows).fill(100/(item.rows||1));
+                    
+                    const totalColRatio = colRatios.reduce((a,b) => Number(a) + Number(b), 0) || 100;
+                    const totalRowRatio = rowRatios.reduce((a,b) => Number(a) + Number(b), 0) || 100;
+
+                    const getColPos = (index) => {
+                      let pos = 0;
+                      for(let i=0; i<index; i++) pos += Number(colRatios[i]);
+                      return (pos / totalColRatio) * 100;
+                    };
+                    const getColWidth = (index, span) => {
+                      let w = 0;
+                      for(let i=index; i<index+(span||1); i++) w += Number(colRatios[i]);
+                      return (w / totalColRatio) * 100;
+                    };
+                    const getRowPos = (index) => {
+                      let pos = 0;
+                      for(let i=0; i<index; i++) pos += Number(rowRatios[i]);
+                      return (pos / totalRowRatio) * 100;
+                    };
+                    const getRowHeight = (index, span) => {
+                      let h = 0;
+                      for(let i=index; i<index+(span||1); i++) h += Number(rowRatios[i]);
+                      return (h / totalRowRatio) * 100;
+                    };
+
+                    return (
+                      <Draggable 
+                        key={item.id} 
+                        nodeRef={nodeRefs.current[item.id]} 
+                        disabled={activeTool !== 'select' || isResizing || isPanning || !isSel || tableResizeData} 
+                        scale={zoom} 
+                        position={{ 
+                          x: (parseFloat(item.x) || 0) * MM_PX_UNIT, 
+                          y: (parseFloat(item.y) || 0) * MM_PX_UNIT 
+                        }} 
+                        onStart={handleDragStart} 
+                        onDrag={handleGroupDrag} 
+                        onStop={handleDragStop}
                       >
                         <div 
+                          ref={nodeRefs.current[item.id]} 
+                          onClick={(e) => handleItemClick(e, item.id)} 
                           style={{ 
-                            transform:       `rotate(${parseFloat(item.rotate)||0}deg)`, 
-                            transformOrigin: 'center center', 
-                            border:          isSel ? '1px dashed rgba(25, 118, 210, 0.5)' : '1px dashed transparent', 
-                            width:           isTextType ? 'max-content' : `${parseFloat(item.width)||0}mm`, 
-                            // ★ 얇은 선(Line)이 브라우저에서 투명해지는 것을 막기 위해 최소 높이 1px 보장
-                            height:          isTextType ? 'max-content' : `${parseFloat(item.height)||0}mm`, 
-                            minHeight:       item.type === 'line' ? '1px' : undefined,
-                            position:        'relative' 
+                            position:         'absolute', 
+                            cursor:           activeTool === 'select' ? 'move' : 'inherit', 
+                            zIndex:           isSel ? 9999 : (items.length - items.findIndex(i => i.id === item.id)), 
+                            userSelect:       'none', 
+                            WebkitUserSelect: 'none' 
                           }}
                         >
-                          
-                          {/* 렌더링: 텍스트 개체들 */}
-                          {isTextType && (() => {
-                            const pfx = item.showPrefixSuffixOnLabel !== false ? (item.prefix || '') : '';
-                            const sfx = item.showPrefixSuffixOnLabel !== false ? (item.suffix || '') : '';
-                            return (
-                              <Box 
-                                sx={{ 
-                                  width:          'max-content', 
-                                  height:         'max-content', 
-                                  display:        'flex', 
-                                  alignItems:     'flex-start', 
-                                  justifyContent: 'flex-start' 
-                                }}
-                              >
-                                <Typography 
+                          <div 
+                            style={{ 
+                              transform:       `rotate(${parseFloat(item.rotate)||0}deg)`, 
+                              transformOrigin: 'center center', 
+                              border:          isSel ? '1px dashed rgba(25, 118, 210, 0.5)' : '1px dashed transparent', 
+                              width:           isTextType ? 'max-content' : `${parseFloat(item.width)||0}mm`, 
+                              height:          isTextType ? 'max-content' : `${parseFloat(item.height)||0}mm`, 
+                              minHeight:       item.type === 'line' ? '1px' : undefined,
+                              position:        'relative',
+                              boxSizing:       'content-box'
+                            }}
+                          >
+                            
+                            {/* 렌더링: 텍스트 개체들 */}
+                            {isTextType && (() => {
+                              const pfx = item.showPrefixSuffixOnLabel !== false ? (item.prefix || '') : '';
+                              const sfx = item.showPrefixSuffixOnLabel !== false ? (item.suffix || '') : '';
+                              return (
+                                <Box 
                                   sx={{ 
-                                    fontSize:   `${parseFloat(item.fontSize)||10}pt`, 
-                                    whiteSpace: 'nowrap', 
-                                    lineHeight: 1, 
-                                    color:      item.type === 'data' ? '#1976d2' : '#000', 
-                                    fontWeight: item.fontWeight, 
-                                    fontStyle:  item.fontStyle || 'normal' 
+                                    width:          'max-content', 
+                                    height:         'max-content', 
+                                    display:        'flex', 
+                                    alignItems:     'flex-start', 
+                                    justifyContent: 'flex-start' 
                                   }}
                                 >
-                                  {item.type === 'date' 
-                                    ? `${pfx}${getKstPreviewDate(item.content)}${sfx}` 
-                                    : item.type === 'data' 
-                                      ? `${pfx}${item.content ? item.content : '[DATA]'}${sfx}` 
-                                      : item.content}
-                                </Typography>
-                              </Box>
-                            );
-                          })()}
-                          
-                          {/* 렌더링: 기본 도형 개체 (SVG 중앙 기준 선 두께 적용) */}
-                          {item.type === 'rect' && (() => {
-                             const bw = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
-                             return (
-                              <svg width="100%" height="100%" style={{ overflow: 'visible', display: 'block' }}>
-                                <rect 
-                                  x="0" 
-                                  y="0" 
-                                  width="100%" 
-                                  height="100%" 
-                                  fill={item.transparent === false ? (item.fill || '#ffffff') : 'transparent'} 
-                                  stroke={item.stroke || '#000000'} 
-                                  strokeWidth={`${bw}mm`} 
-                                />
-                              </svg>
-                             );
-                          })()}
-                          {item.type === 'circle' && (() => {
-                             const bw = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
-                             return (
-                              <svg width="100%" height="100%" style={{ overflow: 'visible', display: 'block' }}>
-                                <ellipse 
-                                  cx="50%" 
-                                  cy="50%" 
-                                  rx="50%" 
-                                  ry="50%" 
-                                  fill={item.transparent === false ? (item.fill || '#ffffff') : 'transparent'} 
-                                  stroke={item.stroke || '#000000'} 
-                                  strokeWidth={`${bw}mm`} 
-                                />
-                              </svg>
-                             );
-                          })()}
-                          
-                          {/* ★ 선(Line) SVG 렌더링 도입으로 0.1mm 소수점 두께 완벽 지원 및 투명화 현상 방지 */}
-                          {item.type === 'line' && (() => {
-                             const thk = item.height !== undefined && item.height !== '' ? parseFloat(item.height) : 0.5;
-                             return (
-                              <svg width="100%" height="100%" style={{ overflow: 'visible', display: 'block' }}>
-                                <line 
-                                  x1="0" 
-                                  y1="50%" 
-                                  x2="100%" 
-                                  y2="50%" 
-                                  stroke={item.stroke || '#000000'} 
-                                  strokeWidth={`${thk}mm`} 
-                                />
-                              </svg>
-                             );
-                          })()}
-                          
-                          {item.type === 'image' && (
-                            <Box 
-                              sx={{ 
-                                width:          '100%', 
-                                height:         '100%', 
-                                border:         item.src ? 'none' : '1px dashed #ccc', 
-                                display:        'flex', 
-                                alignItems:     'center', 
-                                justifyContent: 'center', 
-                                overflow:       'hidden' 
-                              }}
-                            >
-                              {item.src ? (
-                                <img 
-                                  src={item.src} 
-                                  style={{ 
-                                    width:     '100%', 
-                                    height:    '100%', 
-                                    objectFit: 'contain' 
-                                  }} 
-                                  alt="up" 
-                                />
-                              ) : (
-                                <ImageIcon sx={{ color: '#ccc' }} />
-                              )}
-                            </Box>
-                          )}
-                          
-                          {/* 렌더링: 일반 바코드 개체 */}
-                          {item.type === 'barcode' && (
-                            <Box 
-                              sx={{ 
-                                width:          '100%', 
-                                height:         '100%', 
-                                display:        'flex', 
-                                alignItems:     'stretch', 
-                                justifyContent: 'stretch', 
-                                overflow:       'hidden', 
-                                '& svg': { 
-                                  width:   '100% !important', 
-                                  height:  '100% !important', 
-                                  display: 'block' 
-                                } 
-                              }} 
-                              ref={(el) => { 
-                                if (el) { 
-                                  const svg = el.querySelector('svg'); 
-                                  if (svg) svg.setAttribute('preserveAspectRatio', 'none'); 
-                                } 
-                              }}
-                            >
-                              <Barcode 
-                                value={codeDataWithPrefix || 'BARCODE'} 
-                                format={item.barcodeType || 'CODE128'} 
-                                width={2} 
-                                height={100} 
-                                displayValue={item.displayValue !== false} 
-                                margin={0} 
-                              />
-                            </Box>
-                          )}
-                          
-                          {/* 렌더링: 일반 QR코드 개체 */}
-                          {item.type === 'qrcode' && (
-                            <Box 
-                              sx={{ 
-                                width:  '100%', 
-                                height: '100%' 
-                              }}
-                            >
-                              <QRCode 
-                                value={codeDataWithPrefix || 'QRCODE'} 
-                                level={item.qrErrorLevel || 'M'} 
-                                size={(parseFloat(item.height)||0) * MM_PX_UNIT} 
-                                style={{ 
-                                  width:  '100%', 
-                                  height: '100%' 
-                                }} 
-                              />
-                            </Box>
-                          )}
-
-                          {/* ★ 표(Table) 렌더링: CSS border에서 SVG 오버레이로 완전히 교체 (0.1mm 두께 및 비대화 현상 완벽 해결) */}
-                          {item.type === 'table' && (() => {
-                            const bw = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
-                            const strokeColor = item.stroke || '#000000';
-                            const showBorders = item.showBorder !== false && bw > 0;
+                                  <Typography 
+                                    sx={{ 
+                                      fontSize:   `${parseFloat(item.fontSize)||10}pt`, 
+                                      whiteSpace: 'nowrap', 
+                                      lineHeight: 1, 
+                                      color:      item.type === 'data' ? '#1976d2' : '#000', 
+                                      fontWeight: item.fontWeight, 
+                                      fontStyle:  item.fontStyle || 'normal' 
+                                    }}
+                                  >
+                                    {item.type === 'date' 
+                                      ? `${pfx}${getKstPreviewDate(item.content)}${sfx}` 
+                                      : item.type === 'data' 
+                                        ? `${pfx}${item.content ? item.content : '[DATA]'}${sfx}` 
+                                        : item.content}
+                                  </Typography>
+                                </Box>
+                              );
+                            })()}
                             
-                            return (
+                            {/* 렌더링: 기본 도형 개체 */}
+                            {item.type === 'rect' && (() => {
+                               const bw = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
+                               return (
+                                <svg width="100%" height="100%" style={{ overflow: 'visible', display: 'block' }}>
+                                  <rect 
+                                    x="0" 
+                                    y="0" 
+                                    width="100%" 
+                                    height="100%" 
+                                    fill={item.transparent === false ? (item.fill || '#ffffff') : 'transparent'} 
+                                    stroke={item.stroke || '#000000'} 
+                                    strokeWidth={`${bw}mm`} 
+                                  />
+                                </svg>
+                               );
+                            })()}
+                            {item.type === 'circle' && (() => {
+                               const bw = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
+                               return (
+                                <svg width="100%" height="100%" style={{ overflow: 'visible', display: 'block' }}>
+                                  <ellipse 
+                                    cx="50%" 
+                                    cy="50%" 
+                                    rx="50%" 
+                                    ry="50%" 
+                                    fill={item.transparent === false ? (item.fill || '#ffffff') : 'transparent'} 
+                                    stroke={item.stroke || '#000000'} 
+                                    strokeWidth={`${bw}mm`} 
+                                  />
+                                </svg>
+                               );
+                            })()}
+                            
+                            {item.type === 'line' && (() => {
+                               const thk = item.height !== undefined && item.height !== '' ? parseFloat(item.height) : 0.5;
+                               return (
+                                <svg width="100%" height="100%" style={{ overflow: 'visible', display: 'block' }}>
+                                  <line 
+                                    x1="0" 
+                                    y1="50%" 
+                                    x2="100%" 
+                                    y2="50%" 
+                                    stroke={item.stroke || '#000000'} 
+                                    strokeWidth={`${thk}mm`} 
+                                  />
+                                </svg>
+                               );
+                            })()}
+                            
+                            {item.type === 'image' && (
                               <Box 
                                 sx={{ 
-                                  width:           '100%', 
-                                  height:          '100%', 
-                                  position:        'relative',
-                                  outline:         isSel && !showBorders ? '1px dashed rgba(0,0,0,0.3)' : 'none',
+                                  width:          '100%', 
+                                  height:         '100%', 
+                                  border:         item.src ? 'none' : '1px dashed #ccc', 
+                                  display:        'flex', 
+                                  alignItems:     'center', 
+                                  justifyContent: 'center', 
+                                  overflow:       'hidden' 
                                 }}
                               >
-                                {/* 표 배경색 (테두리 영향 안 받음) */}
-                                <Box sx={{ width: '100%', height: '100%', backgroundColor: item.transparent === false ? (item.fill || '#ffffff') : 'transparent', position: 'absolute', top: 0, left: 0 }} />
-
-                                {/* ★ SVG 선 오버레이 (셀 겹침에 의한 굵기 비대화가 전혀 없고, 0.1mm 소수점까지 100% 동일하게 렌더링됨) */}
-                                {showBorders && (
-                                  <svg width="100%" height="100%" style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', overflow: 'visible', zIndex: 2 }}>
-                                    {item.cells?.map((cell, idx) => {
-                                      if (hiddenCells.has(`${cell.row}_${cell.col}`)) return null;
-                                      return (
-                                        <rect 
-                                          key={idx}
-                                          x={`${(cell.col / (item.cols || 1)) * 100}%`}
-                                          y={`${(cell.row / (item.rows || 1)) * 100}%`}
-                                          width={`${((cell.colSpan || 1) / (item.cols || 1)) * 100}%`}
-                                          height={`${((cell.rowSpan || 1) / (item.rows || 1)) * 100}%`}
-                                          fill="none"
-                                          stroke={strokeColor}
-                                          strokeWidth={`${bw}mm`}
-                                        />
-                                      );
-                                    })}
-                                  </svg>
+                                {item.src ? (
+                                  <img 
+                                    src={item.src} 
+                                    style={{ 
+                                      width:     '100%', 
+                                      height:    '100%', 
+                                      objectFit: 'contain' 
+                                    }} 
+                                    alt="up" 
+                                  />
+                                ) : (
+                                  <ImageIcon sx={{ color: '#ccc' }} />
                                 )}
+                              </Box>
+                            )}
+                            
+                            {/* 렌더링: 일반 바코드 개체 */}
+                            {item.type === 'barcode' && (
+                              <Box 
+                                sx={{ 
+                                  width:          '100%', 
+                                  height:         '100%', 
+                                  display:        'flex', 
+                                  alignItems:     'stretch', 
+                                  justifyContent: 'stretch', 
+                                  overflow:       'hidden', 
+                                  '& svg': { 
+                                    width:   '100% !important', 
+                                    height:  '100% !important', 
+                                    display: 'block' 
+                                  } 
+                                }} 
+                                ref={(el) => { 
+                                  if (el) { 
+                                    const svg = el.querySelector('svg'); 
+                                    if (svg) svg.setAttribute('preserveAspectRatio', 'none'); 
+                                  } 
+                                }}
+                              >
+                                <Barcode 
+                                  value={codeDataWithPrefix || 'BARCODE'} 
+                                  format={item.barcodeType || 'CODE128'} 
+                                  width={2} 
+                                  height={100} 
+                                  displayValue={item.displayValue !== false} 
+                                  margin={0} 
+                                />
+                              </Box>
+                            )}
+                            
+                            {/* 렌더링: 일반 QR코드 개체 */}
+                            {item.type === 'qrcode' && (
+                              <Box 
+                                sx={{ 
+                                  width:  '100%', 
+                                  height: '100%' 
+                                }}
+                              >
+                                <QRCode 
+                                  value={codeDataWithPrefix || 'QRCODE'} 
+                                  level={item.qrErrorLevel || 'M'} 
+                                  size={(parseFloat(item.height)||0) * MM_PX_UNIT} 
+                                  style={{ 
+                                    width:  '100%', 
+                                    height: '100%' 
+                                  }} 
+                                />
+                              </Box>
+                            )}
 
-                                {/* 표 내부 텍스트 및 바코드 셀들 (CSS Border 전부 제거) */}
+                            {/* 표 렌더링 */}
+                            {item.type === 'table' && (() => {
+                              const bw = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
+                              const strokeColor = item.stroke || '#000000';
+                              const showBorders = item.showBorder !== false && bw > 0;
+                              
+                              return (
                                 <Box 
                                   sx={{ 
                                     width:               '100%', 
                                     height:              '100%', 
-                                    display:             'grid', 
-                                    gridTemplateRows:    `repeat(${item.rows || 1}, 1fr)`, 
-                                    gridTemplateColumns: `repeat(${item.cols || 1}, 1fr)`, 
                                     position:            'relative',
-                                    zIndex:              1,
-                                    boxSizing:           'border-box' 
                                   }}
                                 >
-                                  {item.cells?.map((cell, idx) => {
-                                    if (hiddenCells.has(`${cell.row}_${cell.col}`)) return null;
+                                  <Box 
+                                    sx={{ 
+                                      width:           '100%', 
+                                      height:          '100%', 
+                                      backgroundColor: item.transparent === false ? (item.fill || '#ffffff') : 'transparent', 
+                                      position:        'absolute', 
+                                      top:             0, 
+                                      left:            0 
+                                    }} 
+                                  />
 
-                                    const isCellSelected = selectedCells.some(c => c.itemId === item.id && c.row === cell.row && c.col === cell.col);
-                                    const showCellPfxSfx = cell.showPrefixSuffixOnLabel !== false;
-                                    const cPfx = showCellPfxSfx ? (cell.prefix || '') : '';
-                                    const cSfx = showCellPfxSfx ? (cell.suffix || '') : '';
-                                    
-                                    return (
-                                      <Box 
-                                        key={idx} 
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (activeTool === 'select') {
-                                            setSelectedIds([item.id]);
-                                            const newCell = { 
-                                              itemId: item.id, 
-                                              row:    cell.row, 
-                                              col:    cell.col 
-                                            };
-                                            
-                                            if (e.shiftKey) {
-                                              setSelectedCells(prev => {
-                                                const exists = prev.find(c => c.itemId === item.id && c.row === cell.row && c.col === cell.col);
-                                                if (exists) {
-                                                  return prev.filter(c => !(c.itemId === item.id && c.row === cell.row && c.col === cell.col));
-                                                }
-                                                return [...prev, newCell];
-                                              });
-                                            } else {
-                                              setSelectedCells([newCell]);
+                                  {/* 행/열 개별 드래그 리사이즈 핸들 */}
+                                  {isSel && selectedIds.length === 1 && (
+                                    <>
+                                      {colRatios.slice(0, -1).map((_, i) => (
+                                        <Box
+                                          data-resizer="true"
+                                          key={`col-handle-${i}`}
+                                          onMouseDown={(e) => handleTableResizeStart(e, item, 'col', i)}
+                                          sx={{
+                                            position:        'absolute',
+                                            top:             0,
+                                            bottom:          0,
+                                            left:            `calc(${getColPos(i + 1)}% - 3px)`,
+                                            width:           '6px',
+                                            cursor:          'col-resize',
+                                            zIndex:          10,
+                                            '&:hover':       { backgroundColor: 'rgba(25, 118, 210, 0.5)' }
+                                          }}
+                                        />
+                                      ))}
+                                      {rowRatios.slice(0, -1).map((_, i) => (
+                                        <Box
+                                          data-resizer="true"
+                                          key={`row-handle-${i}`}
+                                          onMouseDown={(e) => handleTableResizeStart(e, item, 'row', i)}
+                                          sx={{
+                                            position:        'absolute',
+                                            left:            0,
+                                            right:           0,
+                                            top:             `calc(${getRowPos(i + 1)}% - 3px)`,
+                                            height:          '6px',
+                                            cursor:          'row-resize',
+                                            zIndex:          10,
+                                            '&:hover':       { backgroundColor: 'rgba(25, 118, 210, 0.5)' }
+                                          }}
+                                        />
+                                      ))}
+                                    </>
+                                  )}
+
+                                  {showBorders && (
+                                    <svg 
+                                      width="100%" 
+                                      height="100%" 
+                                      style={{ 
+                                        position:      'absolute', 
+                                        top:           0, 
+                                        left:          0, 
+                                        pointerEvents: 'none', 
+                                        overflow:      'visible', 
+                                        zIndex:        2 
+                                      }}
+                                    >
+                                      {item.cells?.map((cell, idx) => {
+                                        if (hiddenCells.has(`${cell.row}_${cell.col}`)) return null;
+                                        return (
+                                          <rect 
+                                            key={idx}
+                                            x={`${getColPos(cell.col)}%`}
+                                            y={`${getRowPos(cell.row)}%`}
+                                            width={`${getColWidth(cell.col, cell.colSpan)}%`}
+                                            height={`${getRowHeight(cell.row, cell.rowSpan)}%`}
+                                            fill="none"
+                                            stroke={strokeColor}
+                                            strokeWidth={`${bw}mm`}
+                                          />
+                                        );
+                                      })}
+                                    </svg>
+                                  )}
+
+                                  {/* ★ Grid Template 변경: % 대신 fr(Fraction) 단위 강제 할당으로 100% 꽉 채우기 적용 */}
+                                  <Box 
+                                    sx={{ 
+                                      width:               '100%', 
+                                      height:              '100%', 
+                                      display:             'grid', 
+                                      gridTemplateRows:    rowRatios.map(r => `${Number(r)}fr`).join(' '), 
+                                      gridTemplateColumns: colRatios.map(r => `${Number(r)}fr`).join(' '), 
+                                      position:            'relative',
+                                      zIndex:              1,
+                                      boxSizing:           'border-box' 
+                                    }}
+                                  >
+                                    {item.cells?.map((cell, idx) => {
+                                      if (hiddenCells.has(`${cell.row}_${cell.col}`)) return null;
+
+                                      const isCellSelected = selectedCells.some(c => c.itemId === item.id && c.row === cell.row && c.col === cell.col);
+                                      const showCellPfxSfx = cell.showPrefixSuffixOnLabel !== false;
+                                      const cPfx = showCellPfxSfx ? (cell.prefix || '') : '';
+                                      const cSfx = showCellPfxSfx ? (cell.suffix || '') : '';
+                                      const isCellVisible = cell.visible !== false; 
+                                      
+                                      return (
+                                        <Box 
+                                          key={idx} 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (activeTool === 'select') {
+                                              const newCell = { 
+                                                itemId: item.id, 
+                                                row:    cell.row, 
+                                                col:    cell.col 
+                                              };
+                                              
+                                              const isCtrl = e.ctrlKey || e.metaKey;
+
+                                              if (isCtrl) {
+                                                // Ctrl: 토글 다중 선택
+                                                setSelectedIds([item.id]);
+                                                setSelectedCells(prev => {
+                                                  const exists = prev.find(c => c.itemId === item.id && c.row === cell.row && c.col === cell.col);
+                                                  if (exists) {
+                                                    return prev.filter(c => !(c.itemId === item.id && c.row === cell.row && c.col === cell.col));
+                                                  }
+                                                  return [...prev, newCell];
+                                                });
+                                                lastSelectedCellRef.current = newCell;
+                                              } else if (e.shiftKey && lastSelectedCellRef.current?.itemId === item.id) {
+                                                // Shift: 시작점부터 끝점까지 범위 선택
+                                                setSelectedIds([item.id]);
+                                                const startCell = lastSelectedCellRef.current;
+                                                const minRow = Math.min(startCell.row, cell.row);
+                                                const maxRow = Math.max(startCell.row, cell.row);
+                                                const minCol = Math.min(startCell.col, cell.col);
+                                                const maxCol = Math.max(startCell.col, cell.col);
+
+                                                const rangeCells = [];
+                                                item.cells.forEach(c => {
+                                                  if (c.row >= minRow && c.row <= maxRow && c.col >= minCol && c.col <= maxCol) {
+                                                    if (!hiddenCells.has(`${c.row}_${c.col}`)) {
+                                                      rangeCells.push({ itemId: item.id, row: c.row, col: c.col });
+                                                    }
+                                                  }
+                                                });
+                                                setSelectedCells(rangeCells);
+                                              } else {
+                                                // 일반: 단일 선택
+                                                setSelectedIds([item.id]);
+                                                setSelectedCells([newCell]);
+                                                lastSelectedCellRef.current = newCell;
+                                              }
                                             }
-                                          }
-                                        }}
-                                        sx={{
-                                          gridRow:         `${cell.row + 1} / span ${cell.rowSpan || 1}`,
-                                          gridColumn:      `${cell.col + 1} / span ${cell.colSpan || 1}`,
-                                          boxSizing:       'border-box',
-                                          display:         'flex',
-                                          alignItems:      'center',
-                                          justifyContent:  'center',
-                                          backgroundColor: isCellSelected ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
-                                          overflow:        'hidden',
-                                          position:        'relative',
-                                          cursor:          'pointer',
-                                          padding:         '2px'
-                                        }}
-                                      >
-                                        {cell.cellType === 'barcode' ? (
-                                          <Box 
-                                            sx={{ 
-                                              width:          '100%', 
-                                              height:         '100%', 
-                                              display:        'flex', 
-                                              alignItems:     'stretch', 
-                                              justifyContent: 'stretch', 
-                                              overflow:       'hidden', 
-                                              '& svg': { 
-                                                width:   '100% !important', 
-                                                height:  '100% !important', 
-                                                display: 'block' 
-                                              } 
-                                            }} 
-                                            ref={(el) => { 
-                                              if (el) { 
-                                                const svg = el.querySelector('svg'); 
-                                              if (svg) svg.setAttribute('preserveAspectRatio', 'none'); 
-                                              } 
-                                            }}
-                                          >
-                                             <Barcode 
-                                               value={codeDataWithPrefix || 'BARCODE'} 
-                                               format={cell.barcodeType || 'CODE128'} 
-                                               width={2} 
-                                               height={100} 
-                                               displayValue={cell.displayValue !== false} 
-                                               margin={4} 
-                                            />
-                                          </Box>
-                                        ) : cell.cellType === 'qrcode' ? (
-                                          <Box 
-                                            sx={{ 
-                                              display:        'flex', 
-                                              alignItems:     'center', 
-                                              justifyContent: 'center',
-                                              width:          '100%',
-                                              height:         '100%',
-                                              padding:        '2px',
-                                              boxSizing:      'border-box'
-                                            }}
-                                          >
-                                            <QRCode 
-                                              value={codeDataWithPrefix || 'QRCODE'} 
-                                              level={cell.qrErrorLevel || 'M'} 
-                                              style={{ 
-                                                maxWidth:  '100%', 
-                                                maxHeight: '100%',
-                                                width:     'auto',
-                                                height:    'auto'
-                                              }}
-                                            />
-                                          </Box>
-                                        ) : (
-                                          <Typography 
-                                            sx={{ 
-                                              fontSize:   `${parseFloat(item.fontSize)||10}pt`, 
-                                              fontWeight: item.fontWeight, 
-                                              fontStyle:  item.fontStyle,
-                                              color:      cell.cellType === 'data' ? '#1976d2' : '#000',
-                                              wordBreak:  'break-all',
-                                              textAlign:  'center',
-                                              lineHeight: 1.1
-                                            }}
-                                          >
-                                            {cell.cellType === 'data' 
-                                              ? `${cPfx}[${cell.dataId || 'DATA'}]${cSfx}`
-                                              : cell.cellType === 'date'
-                                                ? `${cPfx}${getKstPreviewDate(cell.content || 'YYYY-MM-DD')}${cSfx}`
-                                                : cell.content}
-                                          </Typography>
-                                        )}
-                                      </Box>
-                                    );
-                                  })}
+                                          }}
+                                          sx={{
+                                            gridRow:         `${cell.row + 1} / span ${cell.rowSpan || 1}`,
+                                            gridColumn:      `${cell.col + 1} / span ${cell.colSpan || 1}`,
+                                            boxSizing:       'border-box',
+                                            display:         'flex',
+                                            alignItems:      'center',
+                                            justifyContent:  'center',
+                                            backgroundColor: isCellSelected ? 'rgba(25, 118, 210, 0.2)' : 'transparent',
+                                            overflow:        'hidden',
+                                            position:        'relative',
+                                            cursor:          'pointer',
+                                            padding:         '2px'
+                                          }}
+                                        >
+                                          {/* 셀 가시성이 켜져있을 때만 내부 데이터 렌더링 */}
+                                          {isCellVisible && (
+                                            cell.cellType === 'barcode' ? (
+                                              <Box 
+                                                sx={{ 
+                                                  display:        'flex', 
+                                                  alignItems:     'center', 
+                                                  justifyContent: 'center', 
+                                                  width:          '100%', 
+                                                  height:         '100%', 
+                                                  overflow:       'hidden', 
+                                                  '& svg': { 
+                                                    width:   '100% !important', 
+                                                    height:  '100% !important', 
+                                                    display: 'block' 
+                                                  } 
+                                                }}
+                                                ref={(el) => { 
+                                                  if (el) { 
+                                                    const svg = el.querySelector('svg'); 
+                                                    if (svg) svg.setAttribute('preserveAspectRatio', 'none'); 
+                                                  } 
+                                                }}
+                                              >
+                                                 <Barcode 
+                                                   value={codeDataWithPrefix || 'BARCODE'} 
+                                                   format={cell.barcodeType || 'CODE128'} 
+                                                   width={2} 
+                                                   height={35} 
+                                                   displayValue={cell.displayValue !== false} 
+                                                   margin={4} 
+                                                />
+                                              </Box>
+                                            ) : cell.cellType === 'qrcode' ? (
+                                              <Box 
+                                                sx={{ 
+                                                  display:        'flex', 
+                                                  alignItems:     'center', 
+                                                  justifyContent: 'center',
+                                                  width:          '100%',
+                                                  height:         '100%',
+                                                  padding:        '2px',
+                                                  boxSizing:      'border-box'
+                                                }}
+                                              >
+                                                <QRCode 
+                                                  value={codeDataWithPrefix || 'QRCODE'} 
+                                                  level={cell.qrErrorLevel || 'M'} 
+                                                  style={{ 
+                                                    maxWidth:  '100%', 
+                                                    maxHeight: '100%',
+                                                    width:     'auto',
+                                                    height:    'auto'
+                                                  }}
+                                                />
+                                              </Box>
+                                            ) : (
+                                              <Typography 
+                                                sx={{ 
+                                                  fontSize:   `${parseFloat(cell.fontSize) || parseFloat(item.fontSize) || 10}pt`, 
+                                                  fontWeight: item.fontWeight, 
+                                                  fontStyle:  item.fontStyle,
+                                                  color:      cell.cellType === 'data' ? '#1976d2' : '#000',
+                                                  wordBreak:  'break-all',
+                                                  textAlign:  'center',
+                                                  lineHeight: 1.1
+                                                }}
+                                              >
+                                                {cell.cellType === 'data' 
+                                                  ? `${cPfx}[${cell.dataId || 'DATA'}]${cSfx}`
+                                                  : cell.cellType === 'date'
+                                                    ? `${cPfx}${getKstPreviewDate(cell.content || 'YYYY-MM-DD')}${cSfx}`
+                                                    : cell.content}
+                                              </Typography>
+                                            )
+                                          )}
+                                        </Box>
+                                      );
+                                    })}
+                                  </Box>
                                 </Box>
-                              </Box>
-                            );
-                          })()}
-                          
-                          {/* 우측 하단 리사이즈 컨트롤러 */}
-                          {isSel && selectedIds.length === 1 && !isTextType && (
-                            <Box 
-                              onMouseDown={(e) => { 
-                                e.stopPropagation(); 
-                                setIsResizing(true); 
-                              }} 
-                              sx={{ 
-                                position:        'absolute', 
-                                right:           -5, 
-                                bottom:          -5, 
-                                width:           10, 
-                                height:          10, 
-                                backgroundColor: '#1976d2', 
-                                cursor:          'nwse-resize', 
-                                borderRadius:    '50%', 
-                                border:          '1px solid #fff', 
-                                zIndex:          101 
-                              }} 
-                            />
-                          )}
+                              );
+                            })()}
+                            
+                            {/* 우측 하단 리사이즈 컨트롤러 */}
+                            {isSel && selectedIds.length === 1 && !isTextType && (
+                              <Box 
+                                data-resizer="true"
+                                onMouseDown={(e) => { 
+                                  e.stopPropagation(); 
+                                  setIsResizing(true); 
+                                }} 
+                                sx={{ 
+                                  position:        'absolute', 
+                                  right:           -5, 
+                                  bottom:          -5, 
+                                  width:           10, 
+                                  height:          10, 
+                                  backgroundColor: '#1976d2', 
+                                  cursor:          'nwse-resize', 
+                                  borderRadius:    '50%', 
+                                  border:          '1px solid #fff', 
+                                  zIndex:          101 
+                                }} 
+                              />
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </Draggable>
-                  );
-                })}
+                      </Draggable>
+                    );
+                  })}
+                </Box>
               </Box>
             </Box>
           </Box>
@@ -2023,11 +2695,12 @@ const LabelDesignPage = () => {
                    size="small" 
                    fullWidth 
                    value={targetItem?.label || ''} 
-                   onChange={(e) => updateItem(selectedIds[0], 'label', e.target.value)} 
+                   onChange={(e) => updateItem(selectedIds[0], 'label', e.target.value, false)} 
+                   onBlur={takeSnapshot}
                  />
                )}
 
-               {/* ★ 양방향 동기화 마스터 편집창 */}
+               {/* 양방향 동기화 마스터 편집창 */}
                {isMasterInputVisible && (
                  <MuiPaper 
                    variant="outlined" 
@@ -2055,7 +2728,10 @@ const LabelDesignPage = () => {
                      value={masterInputText} 
                      onChange={handleCombinedDataChange} 
                      onFocus={() => setIsMasterFocused(true)}
-                     onBlur={() => setIsMasterFocused(false)}
+                     onBlur={() => {
+                       setIsMasterFocused(false);
+                       takeSnapshot();
+                     }}
                      sx={{ backgroundColor: '#fff' }}
                      helperText={`구분자 '${layout.delimiter || '없음'}' 기준으로 각 데이터 셀에 자동 분배됩니다.`}
                    />
@@ -2165,7 +2841,7 @@ const LabelDesignPage = () => {
                {/* 3-3. 단일 개체 속성 */}
                {selectedIds.length === 1 && (
                  <>
-                   {/* ★ 레이어 순서 (Z-Index) 제어 */}
+                   {/* 레이어 순서 (Z-Index) 제어 */}
                    <MuiPaper 
                      variant="outlined" 
                      sx={{ 
@@ -2209,7 +2885,7 @@ const LabelDesignPage = () => {
                       </Stack>
                    </MuiPaper>
 
-                   {/* ★ 모양 스타일 제어 (배경색/선두께) */}
+                   {/* 모양 스타일 제어 (배경색/선두께) */}
                    {['rect', 'circle', 'table', 'line'].includes(targetItem?.type) && (
                      <>
                        <Divider sx={{ my: 1 }} />
@@ -2224,7 +2900,8 @@ const LabelDesignPage = () => {
                              <input 
                                type="color" 
                                value={targetItem?.stroke || '#000000'} 
-                               onChange={(e) => updateItem(selectedIds[0], 'stroke', e.target.value)}
+                               onChange={(e) => updateItem(selectedIds[0], 'stroke', e.target.value, false)}
+                               onBlur={takeSnapshot}
                                style={{ width: 30, height: 30, padding: 0, border: '1px solid #ccc', cursor: 'pointer' }}
                              />
                              <TextField 
@@ -2232,12 +2909,11 @@ const LabelDesignPage = () => {
                                type="number" 
                                size="small" 
                                value={targetItem?.borderWidth ?? ''} 
-                               onChange={(e) => updateItem(selectedIds[0], 'borderWidth', e.target.value)}
+                               onChange={(e) => updateItem(selectedIds[0], 'borderWidth', e.target.value, false)}
                                onBlur={(e) => {
                                  let val = parseFloat(e.target.value);
-                                 // ★ 완전히 지웠을 땐 0(선 숨김)을 허용하고, 이상한 값이면 0.5 복구
                                  if(isNaN(val) || val < 0) val = 0; 
-                                 updateItem(selectedIds[0], 'borderWidth', String(val));
+                                 updateItem(selectedIds[0], 'borderWidth', Number(val), true);
                                }}
                                inputProps={{ step: 0.1, min: 0 }}
                                sx={{ width: 100, ml: 1 }}
@@ -2250,7 +2926,8 @@ const LabelDesignPage = () => {
                                <input 
                                  type="color" 
                                  value={targetItem?.fill || '#ffffff'} 
-                                 onChange={(e) => updateItem(selectedIds[0], 'fill', e.target.value)}
+                                 onChange={(e) => updateItem(selectedIds[0], 'fill', e.target.value, false)}
+                                 onBlur={takeSnapshot}
                                  style={{ width: 30, height: 30, padding: 0, border: '1px solid #ccc', cursor: 'pointer' }}
                                />
                              )}
@@ -2259,7 +2936,7 @@ const LabelDesignPage = () => {
                                  <Checkbox 
                                    size="small" 
                                    checked={targetItem?.transparent !== false} 
-                                   onChange={(e) => updateItem(selectedIds[0], 'transparent', e.target.checked)} 
+                                   onChange={(e) => updateItem(selectedIds[0], 'transparent', e.target.checked, true)} 
                                  />
                                }
                                label={<Typography variant="caption" fontWeight="bold">채우기 없음(투명)</Typography>}
@@ -2269,14 +2946,14 @@ const LabelDesignPage = () => {
                          </Box>
                        )}
 
-                       {/* ★ 선(Line) 두께 및 색상 제어 (입력 리셋 버그 픽스 및 최솟값 허용) */}
                        {targetItem?.type === 'line' && (
                          <Stack direction="row" spacing={1} alignItems="center" mt={1}>
                            <Typography variant="caption" fontWeight="bold">선 색상</Typography>
                            <input 
                              type="color" 
                              value={targetItem?.stroke || '#000000'} 
-                             onChange={(e) => updateItem(selectedIds[0], 'stroke', e.target.value)}
+                             onChange={(e) => updateItem(selectedIds[0], 'stroke', e.target.value, false)}
+                             onBlur={takeSnapshot}
                              style={{ width: 30, height: 30, padding: 0, border: '1px solid #ccc', cursor: 'pointer' }}
                            />
                            <TextField 
@@ -2284,12 +2961,11 @@ const LabelDesignPage = () => {
                              type="number" 
                              size="small" 
                              value={targetItem?.height ?? ''} 
-                             onChange={(e) => updateItem(selectedIds[0], 'height', e.target.value)}
+                             onChange={(e) => updateItem(selectedIds[0], 'height', e.target.value, false)}
                              onBlur={(e) => {
                                let val = parseFloat(e.target.value);
-                               // ★ 0.1 이하 입력 허용. 아예 지웠을 때만 0.5로 복구
                                if(isNaN(val) || val <= 0) val = 0.5; 
-                               updateItem(selectedIds[0], 'height', String(val));
+                               updateItem(selectedIds[0], 'height', Number(val), true);
                              }}
                              inputProps={{ step: 0.1, min: 0.1 }}
                              sx={{ width: 100, ml: 1 }}
@@ -2297,14 +2973,13 @@ const LabelDesignPage = () => {
                          </Stack>
                        )}
 
-                       {/* 표 전체 테두리 선 표시 제어 */}
                        {targetItem?.type === 'table' && (
                          <FormControlLabel 
                            control={
                              <Checkbox 
                                size="small" 
                                checked={targetItem.showBorder !== false} 
-                               onChange={(e) => updateItem(targetItem.id, 'showBorder', e.target.checked)} 
+                               onChange={(e) => updateItem(targetItem.id, 'showBorder', e.target.checked, true)} 
                              />
                            } 
                            label={<Typography variant="caption" fontWeight="bold">표(Table) 테두리 선 보이기</Typography>} 
@@ -2321,7 +2996,7 @@ const LabelDesignPage = () => {
                        <Checkbox 
                          size="small" 
                          checked={targetItem?.useSnap || false} 
-                         onChange={(e) => updateItem(selectedIds[0], 'useSnap', e.target.checked)} 
+                         onChange={(e) => updateItem(selectedIds[0], 'useSnap', e.target.checked, true)} 
                        />
                      } 
                      label={
@@ -2360,18 +3035,19 @@ const LabelDesignPage = () => {
                           value={parseFloat(targetItem?.rotate) || 0} 
                           min={0} 
                           max={360} 
-                          onChange={(e, v) => updateItem(selectedIds[0], 'rotate', String(v))} 
+                          onChange={(e, v) => updateItem(selectedIds[0], 'rotate', String(v), false)} 
+                          onChangeCommitted={takeSnapshot}
                         />
                         <TextField 
                           size="small" 
                           variant="outlined" 
                           type="number" 
                           value={targetItem?.rotate ?? ''} 
-                          onChange={(e) => updateItem(selectedIds[0], 'rotate', e.target.value)} 
+                          onChange={(e) => updateItem(selectedIds[0], 'rotate', e.target.value, false)} 
                           onBlur={(e) => {
                             let val = parseFloat(e.target.value);
                             if(isNaN(val)) val = 0;
-                            updateItem(selectedIds[0], 'rotate', String(val));
+                            updateItem(selectedIds[0], 'rotate', Number(val), true);
                           }}
                           sx={{ 
                             width: 100 
@@ -2397,14 +3073,14 @@ const LabelDesignPage = () => {
                        type="number" 
                        size="small" 
                        value={targetItem?.x ?? ''} 
-                       onChange={(e) => updateItem(selectedIds[0], 'x', e.target.value)} 
+                       onChange={(e) => updateItem(selectedIds[0], 'x', e.target.value, false)} 
                        onBlur={(e) => {
                          let val = parseFloat(e.target.value);
                          if(isNaN(val) || val < 0) val = 0;
                          const maxW = parseFloat(layout.labelW) || 100;
                          const bbox = getRealBBox(targetItem);
                          if(val + bbox.w > maxW) val = maxW - bbox.w;
-                         updateItem(selectedIds[0], 'x', String(val));
+                         updateItem(selectedIds[0], 'x', Number(val), true);
                        }}
                        inputProps={{ step: 0.1 }}
                      />
@@ -2413,14 +3089,14 @@ const LabelDesignPage = () => {
                        type="number" 
                        size="small" 
                        value={targetItem?.y ?? ''} 
-                       onChange={(e) => updateItem(selectedIds[0], 'y', e.target.value)} 
+                       onChange={(e) => updateItem(selectedIds[0], 'y', e.target.value, false)} 
                        onBlur={(e) => {
                          let val = parseFloat(e.target.value);
                          if(isNaN(val) || val < 0) val = 0;
                          const maxH = parseFloat(layout.labelH) || 50;
                          const bbox = getRealBBox(targetItem);
                          if(val + bbox.h > maxH) val = maxH - bbox.h;
-                         updateItem(selectedIds[0], 'y', String(val));
+                         updateItem(selectedIds[0], 'y', Number(val), true);
                        }}
                        inputProps={{ step: 0.1 }}
                      />
@@ -2438,15 +3114,15 @@ const LabelDesignPage = () => {
                            size="small" 
                            fullWidth 
                            value={targetItem?.width ?? ''} 
-                           onChange={(e) => updateItem(selectedIds[0], 'width', e.target.value)} 
+                           onChange={(e) => updateItem(selectedIds[0], 'width', e.target.value, false)} 
                            onBlur={(e) => {
                              let val = parseFloat(e.target.value);
                              if(isNaN(val) || val < 0.1) val = 10;
                              const maxW = parseFloat(layout.labelW) || 100;
                              const cx = parseFloat(targetItem.x) || 0;
                              if(cx + val > maxW) val = maxW - cx;
-                             updateItem(selectedIds[0], 'width', String(val));
-                             updateItem(selectedIds[0], 'height', String(val));
+                             updateItem(selectedIds[0], 'width', Number(val), true);
+                             updateItem(selectedIds[0], 'height', Number(val), true);
                            }}
                            inputProps={{ step: 0.1, min: 0.1 }}
                          />
@@ -2457,14 +3133,14 @@ const LabelDesignPage = () => {
                              type="number" 
                              size="small" 
                              value={targetItem?.width ?? ''} 
-                             onChange={(e) => updateItem(selectedIds[0], 'width', e.target.value)} 
+                             onChange={(e) => updateItem(selectedIds[0], 'width', e.target.value, false)} 
                              onBlur={(e) => {
                                let val = parseFloat(e.target.value);
                                if(isNaN(val) || val < 0.1) val = 10;
                                const maxW = parseFloat(layout.labelW) || 100;
                                const cx = parseFloat(targetItem.x) || 0;
                                if(cx + val > maxW) val = maxW - cx;
-                               updateItem(selectedIds[0], 'width', String(val));
+                               updateItem(selectedIds[0], 'width', Number(val), true);
                              }}
                              inputProps={{ step: 0.1, min: 0.1 }}
                            />
@@ -2474,14 +3150,14 @@ const LabelDesignPage = () => {
                                type="number" 
                                size="small" 
                                value={targetItem?.height ?? ''} 
-                               onChange={(e) => updateItem(selectedIds[0], 'height', e.target.value)} 
+                               onChange={(e) => updateItem(selectedIds[0], 'height', e.target.value, false)} 
                                onBlur={(e) => {
                                  let val = parseFloat(e.target.value);
                                  if(isNaN(val) || val < 0.1) val = 10;
                                  const maxH = parseFloat(layout.labelH) || 50;
                                  const cy = parseFloat(targetItem.y) || 0;
                                  if(cy + val > maxH) val = maxH - cy;
-                                 updateItem(selectedIds[0], 'height', String(val));
+                                 updateItem(selectedIds[0], 'height', Number(val), true);
                                }}
                                inputProps={{ step: 0.1, min: 0.1 }}
                              />
@@ -2509,7 +3185,7 @@ const LabelDesignPage = () => {
                      onChange={handleImageUpload} 
                    />
 
-                   {/* ★ 표(Table) 전용 셀 및 구조 편집(행/열/병합) 제어 기능 */}
+                   {/* 표(Table) 전용 셀 및 구조 편집(행/열/병합) 제어 기능 */}
                    {targetItem?.type === 'table' && (
                      <>
                        <Divider sx={{ my: 1 }} />
@@ -2521,11 +3197,9 @@ const LabelDesignPage = () => {
                          표(Table) 셀/구조 설정
                        </Typography>
 
-                       {/* ★ 선택된 셀에 따른 조건부 렌더링 */}
                        {selectedCells.length > 0 && selectedCells[0].itemId === targetItem.id && (() => {
                          const isMultiSelected = selectedCells.length > 1;
                          
-                         // [다중 선택 상태]: 병합 버튼 표시
                          if (isMultiSelected) {
                            return (
                              <MuiPaper 
@@ -2561,13 +3235,12 @@ const LabelDesignPage = () => {
                                  textAlign="center" 
                                  mt={1}
                                >
-                                 Shift 키를 누른 채 캔버스 표의 셀을 클릭하면 다중 선택이 가능합니다.
+                                 Ctrl(또는 Cmd) 키로 다중 선택, Shift 키로 범위 선택이 가능합니다.
                                </Typography>
                              </MuiPaper>
                            );
                          }
 
-                         // [단일 셀 선택 상태]: 행/열 추가삭제 및 병합해제, 속성 표시
                          if (!activeCell) return null;
                          
                          return (
@@ -2594,7 +3267,34 @@ const LabelDesignPage = () => {
                                </Typography>
                              </Stack>
 
-                             {/* 병합 해제 및 구조 편집 버튼들 */}
+                             <TextField 
+                               label="셀 이름 (별칭)" 
+                               size="small" 
+                               fullWidth 
+                               value={activeCell.cellName || ''} 
+                               onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { cellName: e.target.value }, false)} 
+                               onBlur={takeSnapshot}
+                               sx={{ mb: 1 }}
+                             />
+
+                             {['text', 'data', 'date'].includes(activeCell.cellType) && (
+                               <TextField 
+                                 label="셀 폰트 크기(pt) - 미입력시 상속" 
+                                 type="number" 
+                                 size="small" 
+                                 fullWidth 
+                                 value={activeCell.fontSize || ''} 
+                                 onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { fontSize: e.target.value }, false)} 
+                                 onBlur={(e) => {
+                                   let val = parseFloat(e.target.value);
+                                   if (isNaN(val) || val < 1) val = ''; 
+                                   updateTableCell(targetItem.id, activeCell.row, activeCell.col, { fontSize: val === '' ? '' : String(val) }, true);
+                                 }}
+                                 inputProps={{ step: 0.5, min: 1 }}
+                                 sx={{ mb: 1 }}
+                               />
+                             )}
+
                              <Typography 
                                variant="caption" 
                                fontWeight="bold" 
@@ -2637,9 +3337,9 @@ const LabelDesignPage = () => {
                                  color="error" 
                                  size="small" 
                                  fullWidth 
-                                 onClick={() => modifyTableStructure(targetItem.id, 'delete-row', activeCell.row)}
+                                 onClick={() => modifyTableStructure(targetItem.id, 'delete-row', activeCell.row, activeCell.rowSpan || 1)}
                                >
-                                 행 삭제
+                                 행 일괄 삭제
                                </Button>
                              </Stack>
                              <Stack 
@@ -2661,9 +3361,9 @@ const LabelDesignPage = () => {
                                  color="error" 
                                  size="small" 
                                  fullWidth 
-                                 onClick={() => modifyTableStructure(targetItem.id, 'delete-col', activeCell.col)}
+                                 onClick={() => modifyTableStructure(targetItem.id, 'delete-col', activeCell.col, activeCell.colSpan || 1)}
                                >
-                                 열 삭제
+                                 열 일괄 삭제
                                </Button>
                              </Stack>
                              <Divider sx={{ mb: 2 }} />
@@ -2677,7 +3377,7 @@ const LabelDesignPage = () => {
                                <Select 
                                  value={activeCell.cellType || 'text'} 
                                  label="셀 속성" 
-                                 onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { cellType: e.target.value })}
+                                 onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { cellType: e.target.value }, true)}
                                >
                                  <MenuItem value="text">고정 텍스트</MenuItem>
                                  <MenuItem value="data">가변 데이터(Data)</MenuItem>
@@ -2693,7 +3393,8 @@ const LabelDesignPage = () => {
                                  size="small" 
                                  fullWidth 
                                  value={activeCell.dataId || ''} 
-                                 onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { dataId: e.target.value })} 
+                                 onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { dataId: e.target.value }, false)} 
+                                 onBlur={takeSnapshot}
                                  sx={{ mt: 1 }}
                                />
                              )}
@@ -2703,7 +3404,8 @@ const LabelDesignPage = () => {
                                  size="small" 
                                  fullWidth 
                                  value={activeCell.content || 'YYYY-MM-DD'} 
-                                 onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { content: e.target.value })} 
+                                 onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { content: e.target.value }, false)} 
+                                 onBlur={takeSnapshot}
                                />
                              )}
                              {activeCell.cellType === 'text' && (
@@ -2713,7 +3415,8 @@ const LabelDesignPage = () => {
                                  fullWidth 
                                  multiline 
                                  value={activeCell.content || ''} 
-                                 onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { content: e.target.value })} 
+                                 onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { content: e.target.value }, false)} 
+                                 onBlur={takeSnapshot}
                                />
                              )}
                              
@@ -2730,7 +3433,7 @@ const LabelDesignPage = () => {
                                    <Select 
                                      value={activeCell.barcodeType || 'CODE128'} 
                                      label="포맷" 
-                                     onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { barcodeType: e.target.value })}
+                                     onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { barcodeType: e.target.value }, true)}
                                    >
                                      <MenuItem value="CODE128">CODE128</MenuItem>
                                      <MenuItem value="CODE39">CODE39</MenuItem>
@@ -2742,7 +3445,7 @@ const LabelDesignPage = () => {
                                      <Checkbox 
                                        size="small" 
                                        checked={activeCell.displayValue !== false} 
-                                       onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { displayValue: e.target.checked })} 
+                                       onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { displayValue: e.target.checked }, true)} 
                                      />
                                    } 
                                    label={<Typography variant="caption" fontWeight="bold">바코드 텍스트 표시</Typography>} 
@@ -2759,7 +3462,7 @@ const LabelDesignPage = () => {
                                  <Select 
                                    value={activeCell.qrErrorLevel || 'M'} 
                                    label="오류 복원율" 
-                                   onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { qrErrorLevel: e.target.value })}
+                                   onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { qrErrorLevel: e.target.value }, true)}
                                  >
                                    <MenuItem value="L">L(7%)</MenuItem>
                                    <MenuItem value="M">M(15%)</MenuItem>
@@ -2779,13 +3482,15 @@ const LabelDesignPage = () => {
                                      label="접두사(Prefix)" 
                                      size="small" 
                                      value={activeCell.prefix || ''} 
-                                     onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { prefix: e.target.value })} 
+                                     onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { prefix: e.target.value }, false)} 
+                                     onBlur={takeSnapshot}
                                    />
                                    <TextField 
                                      label="접미사(Suffix)" 
                                      size="small" 
                                      value={activeCell.suffix || ''} 
-                                     onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { suffix: e.target.value })} 
+                                     onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { suffix: e.target.value }, false)} 
+                                     onBlur={takeSnapshot}
                                    />
                                  </Stack>
                                  <FormControlLabel 
@@ -2793,7 +3498,7 @@ const LabelDesignPage = () => {
                                      <Checkbox 
                                        size="small" 
                                        checked={activeCell.showPrefixSuffixOnLabel !== false} 
-                                       onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { showPrefixSuffixOnLabel: e.target.checked })} 
+                                       onChange={(e) => updateTableCell(targetItem.id, activeCell.row, activeCell.col, { showPrefixSuffixOnLabel: e.target.checked }, true)} 
                                      />
                                    } 
                                    label={<Typography variant="caption" fontWeight="bold">화면(라벨)에도 접두/접미사 표시</Typography>} 
@@ -2807,59 +3512,7 @@ const LabelDesignPage = () => {
                      </>
                    )}
 
-                   {targetItem?.type === 'barcode' && (
-                     <>
-                       <FormControl 
-                         fullWidth 
-                         size="small"
-                       >
-                         <InputLabel>바코드 포맷</InputLabel>
-                         <Select 
-                           value={targetItem?.barcodeType || 'CODE128'} 
-                           label="바코드 포맷" 
-                           onChange={(e) => updateItem(selectedIds[0], 'barcodeType', e.target.value)}
-                         >
-                           <MenuItem value="CODE128">CODE128 (기본)</MenuItem>
-                           <MenuItem value="CODE39">CODE39</MenuItem>
-                           <MenuItem value="EAN13">EAN-13</MenuItem>
-                           <MenuItem value="EAN8">EAN-8</MenuItem>
-                           <MenuItem value="UPC">UPC</MenuItem>
-                           <MenuItem value="ITF14">ITF-14</MenuItem>
-                         </Select>
-                       </FormControl>
-                       <FormControlLabel 
-                         control={
-                           <Checkbox 
-                             size="small" 
-                             checked={targetItem?.displayValue !== false} 
-                             onChange={(e) => updateItem(selectedIds[0], 'displayValue', e.target.checked)} 
-                           />
-                         } 
-                         label={<Typography variant="caption" fontWeight="bold">바코드 텍스트(HRI) 표시</Typography>} 
-                       />
-                     </>
-                   )}
-
-                   {targetItem?.type === 'qrcode' && (
-                     <FormControl 
-                       fullWidth 
-                       size="small"
-                     >
-                       <InputLabel>오류 복원율</InputLabel>
-                       <Select 
-                         value={targetItem?.qrErrorLevel || 'M'} 
-                         label="오류 복원율" 
-                         onChange={(e) => updateItem(selectedIds[0], 'qrErrorLevel', e.target.value)}
-                       >
-                         <MenuItem value="L">L (Low - 7%)</MenuItem>
-                         <MenuItem value="M">M (Medium - 15%)</MenuItem>
-                         <MenuItem value="Q">Q (Quartile - 25%)</MenuItem>
-                         <MenuItem value="H">H (High - 30%)</MenuItem>
-                       </Select>
-                     </FormControl>
-                   )}
-                   
-                   {/* 텍스트 요소 및 표(Table) 전용: 폰트 사이즈 및 스타일 제어 */}
+                   {/* 텍스트 요소 및 표 전체 기본 폰트 사이즈 및 스타일 제어 */}
                    {['text', 'data', 'date', 'table'].includes(targetItem?.type) && (
                      <MuiPaper 
                        variant="outlined" 
@@ -2874,15 +3527,15 @@ const LabelDesignPage = () => {
                           alignItems="center"
                         >
                           <TextField 
-                            label="폰트(pt)" 
+                            label="기본 폰트(pt)" 
                             type="number" 
                             size="small" 
                             value={targetItem?.fontSize ?? ''} 
-                            onChange={(e) => updateItem(selectedIds[0], 'fontSize', e.target.value)} 
+                            onChange={(e) => updateItem(selectedIds[0], 'fontSize', e.target.value, false)} 
                             onBlur={(e) => {
                               let val = parseFloat(e.target.value);
                               if(isNaN(val) || val < 1) val = 10;
-                              updateItem(selectedIds[0], 'fontSize', String(val));
+                              updateItem(selectedIds[0], 'fontSize', Number(val), true);
                             }}
                             inputProps={{ step: 0.5, min: 1 }}
                           />
@@ -2890,7 +3543,7 @@ const LabelDesignPage = () => {
                             <IconButton 
                               size="small" 
                               color={targetItem?.fontWeight === 'bold' ? 'primary' : 'default'} 
-                              onClick={() => updateItem(selectedIds[0], 'fontWeight', targetItem?.fontWeight === 'bold' ? 'normal' : 'bold')}
+                              onClick={() => updateItem(selectedIds[0], 'fontWeight', targetItem?.fontWeight === 'bold' ? 'normal' : 'bold', true)}
                             >
                               <FormatBoldIcon fontSize="small" />
                             </IconButton>
@@ -2899,7 +3552,7 @@ const LabelDesignPage = () => {
                             <IconButton 
                               size="small" 
                               color={targetItem?.fontStyle === 'italic' ? 'primary' : 'default'} 
-                              onClick={() => updateItem(selectedIds[0], 'fontStyle', targetItem?.fontStyle === 'italic' ? 'normal' : 'italic')}
+                              onClick={() => updateItem(selectedIds[0], 'fontStyle', targetItem?.fontStyle === 'italic' ? 'normal' : 'italic', true)}
                             >
                               <FormatItalicIcon fontSize="small" />
                             </IconButton>
@@ -2918,13 +3571,15 @@ const LabelDesignPage = () => {
                            label="접두사(Prefix)" 
                            size="small" 
                            value={targetItem?.prefix || ''} 
-                           onChange={(e) => updateItem(selectedIds[0], 'prefix', e.target.value)} 
+                           onChange={(e) => updateItem(selectedIds[0], 'prefix', e.target.value, false)} 
+                           onBlur={takeSnapshot}
                          />
                          <TextField 
                            label="접미사(Suffix)" 
                            size="small" 
                            value={targetItem?.suffix || ''} 
-                           onChange={(e) => updateItem(selectedIds[0], 'suffix', e.target.value)} 
+                           onChange={(e) => updateItem(selectedIds[0], 'suffix', e.target.value, false)} 
+                           onBlur={takeSnapshot}
                          />
                        </Stack>
                        <FormControlLabel 
@@ -2932,7 +3587,7 @@ const LabelDesignPage = () => {
                            <Checkbox 
                              size="small" 
                              checked={targetItem?.showPrefixSuffixOnLabel !== false} 
-                             onChange={(e) => updateItem(selectedIds[0], 'showPrefixSuffixOnLabel', e.target.checked)} 
+                             onChange={(e) => updateItem(selectedIds[0], 'showPrefixSuffixOnLabel', e.target.checked, true)} 
                            />
                          } 
                          label={<Typography variant="caption" fontWeight="bold">화면(라벨)에도 접두/접미사 표시</Typography>} 
@@ -2950,7 +3605,8 @@ const LabelDesignPage = () => {
                        multiline 
                        minRows={2} 
                        value={targetItem?.content || ''} 
-                       onChange={(e) => updateItem(selectedIds[0], 'content', e.target.value)} 
+                       onChange={(e) => updateItem(selectedIds[0], 'content', e.target.value, false)} 
+                       onBlur={takeSnapshot}
                      />
                    ) : null}
                  </>
@@ -3039,67 +3695,121 @@ const LabelDesignPage = () => {
               overflowY: 'auto' 
             }}
           >
-            {/* ★ 레이어 순서도 캔버스의 Z-Index 방향(Index 0 = 맨 위)에 맞게 렌더링되도록 유지 */}
             <Reorder.Group 
               axis="y" 
               values={items} 
-              onReorder={setItems} 
+              onReorder={(newItems) => updateItems(newItems, true)} 
               style={{ 
                 listStyle: 'none', 
                 padding:   0 
               }}
             >
-              {items.map((item) => (
-                <Reorder.Item 
-                  key={item.id} 
-                  value={item}
-                >
-                  <MuiPaper 
-                    elevation={0} 
-                    onClick={() => { 
-                      setSelectedIds([item.id]); 
-                      setSelectedCells([]); 
-                    }} 
-                    sx={{ 
-                      p:               1, 
-                      mb:              0.5, 
-                      display:         'flex', 
-                      alignItems:      'center', 
-                      gap:             1, 
-                      border:          selectedIds.includes(item.id) ? '1.5px solid #1976d2' : '1px solid', 
-                      borderColor:     'divider', 
-                      cursor:          'pointer', 
-                      backgroundColor: selectedIds.includes(item.id) ? 'action.selected' : 'background.paper' 
-                    }}
+              {items.map((item) => {
+                const hiddenCells = getHiddenCells(item);
+
+                return (
+                  <Reorder.Item 
+                    key={item.id} 
+                    value={item}
                   >
-                    <DragIndicatorIcon 
-                      fontSize="small" 
-                      sx={{ color: 'text.secondary' }} 
-                    />
-                    <Typography 
-                      variant="caption" 
+                    <MuiPaper 
+                      elevation={0} 
+                      onClick={(e) => handleItemClick(e, item.id, true)} 
                       sx={{ 
-                        flex:       1, 
-                        fontWeight: 'bold' 
+                        p:               1, 
+                        mb:              0.5, 
+                        display:         'flex', 
+                        alignItems:      'center', 
+                        gap:             1, 
+                        border:          selectedIds.includes(item.id) ? '1.5px solid #1976d2' : '1px solid', 
+                        borderColor:     'divider', 
+                        cursor:          'pointer', 
+                        backgroundColor: selectedIds.includes(item.id) ? 'action.selected' : 'background.paper' 
                       }}
                     >
-                      {item.label}
-                    </Typography>
-                    <IconButton 
-                      size="small" 
-                      onClick={(e) => { 
-                        e.stopPropagation(); 
-                        updateItem(item.id, 'visible', !item.visible); 
-                      }}
-                    >
-                      <VisibilityIcon 
-                        fontSize="inherit" 
-                        color={item.visible ? 'action' : 'disabled'} 
+                      <DragIndicatorIcon 
+                        fontSize="small" 
+                        sx={{ color: 'text.secondary' }} 
                       />
-                    </IconButton>
-                  </MuiPaper>
-                </Reorder.Item>
-              ))}
+                      <Typography 
+                        variant="caption" 
+                        sx={{ 
+                          flex:       1, 
+                          fontWeight: 'bold' 
+                        }}
+                      >
+                        {item.label}
+                      </Typography>
+                      {item.type === 'table' && (
+                        <IconButton 
+                          size="small" 
+                          onClick={(e) => toggleTableExpand(e, item.id)}
+                        >
+                          {expandedTableIds.includes(item.id) ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                        </IconButton>
+                      )}
+                      <IconButton 
+                        size="small" 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          updateItem(item.id, 'visible', !item.visible, true); 
+                        }}
+                      >
+                        <VisibilityIcon 
+                          fontSize="inherit" 
+                          color={item.visible ? 'action' : 'disabled'} 
+                        />
+                      </IconButton>
+                    </MuiPaper>
+
+                    {/* 표 서브 레이어(셀) 목록 렌더링 */}
+                    {item.type === 'table' && expandedTableIds.includes(item.id) && (
+                      <Box sx={{ pl: 4, pr: 1, pb: 1 }}>
+                        {item.cells?.map((cell, cIdx) => {
+                           if (hiddenCells.has(`${cell.row}_${cell.col}`)) return null; 
+                           
+                           return (
+                             <MuiPaper 
+                               key={cIdx} 
+                               elevation={0} 
+                               sx={{ 
+                                 p:               1, 
+                                 mb:              0.5, 
+                                 display:         'flex', 
+                                 alignItems:      'center', 
+                                 backgroundColor: 'rgba(0,0,0,0.02)', 
+                                 border:          '1px solid #eee' 
+                               }}
+                             >
+                                <Typography 
+                                  variant="caption" 
+                                  sx={{ 
+                                    flex:  1, 
+                                    color: 'text.secondary' 
+                                  }}
+                                >
+                                  {cell.cellName ? `${cell.cellName} (${cell.row + 1},${cell.col + 1})` : `셀 (${cell.row + 1}행 ${cell.col + 1}열)`} - {cell.cellType.toUpperCase()}
+                                </Typography>
+                                <IconButton 
+                                  size="small" 
+                                  onClick={(e) => {
+                                     e.stopPropagation();
+                                     updateTableCell(item.id, cell.row, cell.col, { visible: cell.visible === false ? true : false }, true);
+                                  }}
+                                >
+                                   <VisibilityIcon 
+                                     fontSize="inherit" 
+                                     color={cell.visible !== false ? 'action' : 'disabled'} 
+                                   />
+                                </IconButton>
+                             </MuiPaper>
+                           );
+                        })}
+                      </Box>
+                    )}
+                  </Reorder.Item>
+                );
+              })}
             </Reorder.Group>
           </Box>
         </Box>
@@ -3141,7 +3851,7 @@ const LabelDesignPage = () => {
                       labelH: t.LabelH, 
                       ...(raw[0].layout || {}) 
                     }); 
-                    setItems(raw.slice(1)); 
+                    initItems(raw.slice(1)); 
                     setOpenDbDialog(false); 
                   }}
                 >

@@ -25,6 +25,7 @@
     "file-saver": "^2.0.5",
     "framer-motion": "^12.38.0",
     "fullcalendar": "^6.1.20",
+    "html2canvas": "^1.4.1",
     "i18next": "^25.8.4",
     "react": "^19.2.0",
     "react-barcode": "^1.6.1",
