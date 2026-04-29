@@ -1,12 +1,6 @@
 /**
  * @file        LabelDesignPage.jsx
  * @description 전문 디자인 툴 방식의 라벨 편집기 페이지
- * - [UX개선] 선택 도구 단축키 표준화: Ctrl(Cmd) 키로 개별 다중 선택, Shift 키로 시작~끝 범위 일괄 선택 기능 탑재 (캔버스 개체 및 표 내부 셀 모두 적용)
- * - [버그수정] 표(Table) 병합된 셀이 포함된 행/열 삭제 시 셀이 통째로 날아가며 하단에 빈 공간(유령 행)이 붕 뜨던 치명적 버그 완벽 해결
- * - [버그수정] 행/열 삭제 시 남은 셀들이 빈 공간을 100% 꽉 채우지 못하던 현상 완벽 해결 (CSS Grid 'fr' 강제 할당)
- * - [기능추가] 상단 및 좌측에 정밀 렌더링 기반의 눈금자(Ruler) 탑재 완료 (1mm 단위)
- * - [기능추가] 마우스 포인터를 따라다니는 눈금자 십자 가이드라인(Tracking Line) 추가
- * - [버그수정] 개체를 제자리에서 클릭 시 History가 중복으로 쌓이던 현상 완벽 해결 (JSON 딥 체크 알고리즘)
  */
 
 import React, { 
@@ -276,7 +270,7 @@ const LabelDesignPage = () => {
   const hGuideRef = useRef(null);
   const vGuideRef = useRef(null);
 
-  // ★ 범위 선택(Shift)을 위한 앵커 포인트 Ref 추가
+  // 범위 선택(Shift)을 위한 앵커 포인트 Ref
   const lastSelectedIdRef = useRef(null);
   const lastSelectedCellRef = useRef(null);
 
@@ -341,10 +335,14 @@ const LabelDesignPage = () => {
     hCtx.beginPath();
     vCtx.beginPath();
     
-    hCtx.strokeStyle = '#999999';
-    vCtx.strokeStyle = '#999999';
-    hCtx.fillStyle = '#666666';
-    vCtx.fillStyle = '#666666';
+    const isDark = document.body.style.backgroundColor !== 'rgb(241, 245, 249)' && document.body.style.backgroundColor !== '';
+    const rulerLineColor = isDark ? '#64748b' : '#999999';
+    const rulerTextColor = isDark ? '#94a3b8' : '#666666';
+
+    hCtx.strokeStyle = rulerLineColor;
+    vCtx.strokeStyle = rulerLineColor;
+    hCtx.fillStyle = rulerTextColor;
+    vCtx.fillStyle = rulerTextColor;
     hCtx.font = '9px "Segoe UI", Arial, sans-serif';
     vCtx.font = '9px "Segoe UI", Arial, sans-serif';
     hCtx.textAlign = 'center';
@@ -819,7 +817,6 @@ const LabelDesignPage = () => {
     }), true);
   };
 
-  // ★ 변경점: Ctrl(Cmd) 키로 개별 다중 선택, Shift 키로 범위(Range) 선택 로직 적용
   const handleItemClick = (e, id, fromLayer = false) => {
     e.stopPropagation();
     if (!fromLayer && dragInfoRef.current.isDragging) return;
@@ -828,12 +825,10 @@ const LabelDesignPage = () => {
     const isCtrl = e.ctrlKey || e.metaKey;
 
     if (isCtrl) {
-      // Ctrl 클릭: 토글(Toggle) 다중 선택
       setSelectedIds((prev) => prev.includes(id) ? prev.filter((sid) => sid !== id) : [...prev, id]);
       lastSelectedIdRef.current = id;
     } else if (e.shiftKey && lastSelectedIdRef.current) {
-      // Shift 클릭: 앵커 지점부터 현재까지 연속된 범위 모두 선택
-      const visibleItems = items; // 화면 표시 여부에 무관하게 Layer 순서 기준
+      const visibleItems = items; 
       const idx1 = visibleItems.findIndex(i => i.id === lastSelectedIdRef.current);
       const idx2 = visibleItems.findIndex(i => i.id === id);
       if (idx1 !== -1 && idx2 !== -1) {
@@ -841,11 +836,9 @@ const LabelDesignPage = () => {
         const end = Math.max(idx1, idx2);
         const rangeIds = visibleItems.slice(start, end + 1).map(i => i.id);
         
-        // 기존 선택과 병합(Union)
         setSelectedIds(prev => Array.from(new Set([...prev, ...rangeIds])));
       }
     } else {
-      // 일반 클릭: 단일 선택
       setSelectedIds([id]);
       lastSelectedIdRef.current = id;
       if (targetItem?.id !== id) {
@@ -1054,22 +1047,31 @@ const LabelDesignPage = () => {
     }), saveSnapshot);
   };
 
+  // ★ 다중 병합 시 쪼개지는 버그 수정 (Span 거리 합산 로직 추가)
   const handleMergeCells = () => {
     if (!targetItem || targetItem.type !== 'table' || selectedCells.length < 2) return;
 
-    const minRow = Math.min(...selectedCells.map(c => c.row));
-    const maxRow = Math.max(...selectedCells.map(c => c.row));
-    const minCol = Math.min(...selectedCells.map(c => c.col));
-    const maxCol = Math.max(...selectedCells.map(c => c.col));
+    // 실제 선택된 셀의 원본 객체를 찾아서 Span 값을 확인합니다.
+    const actualSelectedCells = selectedCells.map(sc => 
+      targetItem.cells.find(c => c.row === sc.row && c.col === sc.col)
+    ).filter(Boolean);
 
-    const rowSpan = maxRow - minRow + 1;
-    const colSpan = maxCol - minCol + 1;
+    if (actualSelectedCells.length < 2) return;
+
+    // 최대 도달 범위 계산 (시작 좌표 + Span 값 - 1)
+    const minRow = Math.min(...actualSelectedCells.map(c => c.row));
+    const maxRow = Math.max(...actualSelectedCells.map(c => c.row + (c.rowSpan || 1) - 1));
+    const minCol = Math.min(...actualSelectedCells.map(c => c.col));
+    const maxCol = Math.max(...actualSelectedCells.map(c => c.col + (c.colSpan || 1) - 1));
+
+    const finalRowSpan = maxRow - minRow + 1;
+    const finalColSpan = maxCol - minCol + 1;
 
     updateItems((prev) => prev.map((item) => {
       if (item.id === targetItem.id) {
         const mergedCells = item.cells.map(cell => {
           if (cell.row === minRow && cell.col === minCol) {
-            return { ...cell, rowSpan: rowSpan, colSpan: colSpan };
+            return { ...cell, rowSpan: finalRowSpan, colSpan: finalColSpan };
           }
           if (cell.row >= minRow && cell.row <= maxRow && cell.col >= minCol && cell.col <= maxCol) {
             return { ...cell, rowSpan: 1, colSpan: 1 };
@@ -1739,8 +1741,9 @@ const LabelDesignPage = () => {
           alignItems:      'center', 
           py:              2, 
           gap:             1, 
-          backgroundColor: (theme) => theme.palette.mode === 'dark' ? '#111827' : '#2c3e50', 
-          color:           '#fff', 
+          backgroundColor: (theme) => theme.palette.layout.sidebar.background, 
+          color:           (theme) => theme.palette.layout.sidebar.font, 
+          borderRight:     (theme) => `1px solid ${theme.palette.layout.sidebar.border}`,
           borderRadius:    0, 
           zIndex:          12 
         }}
@@ -1815,8 +1818,7 @@ const LabelDesignPage = () => {
             justifyContent:  'space-between', 
             alignItems:      'center', 
             borderRadius:    0, 
-            borderBottom:    '1px solid', 
-            borderColor:     'divider', 
+            borderBottom:    (theme) => `1px solid ${theme.palette.divider}`, 
             backgroundColor: 'background.paper', 
             zIndex:          12 
           }}
@@ -2001,24 +2003,44 @@ const LabelDesignPage = () => {
           {/* 눈금자 교차점 */}
           <Box 
             sx={{ 
-              position: 'absolute', top: 0, left: 0, width: 20, height: 20, 
-              backgroundColor: '#e8e8e8', borderBottom: '1px solid #ccc', borderRight: '1px solid #ccc', zIndex: 20 
+              position:        'absolute', 
+              top:             0, 
+              left:            0, 
+              width:           20, 
+              height:          20, 
+              backgroundColor: (theme) => theme.palette.mode === 'dark' ? '#1e293b' : '#e8e8e8', 
+              borderBottom:    (theme) => `1px solid ${theme.palette.divider}`, 
+              borderRight:     (theme) => `1px solid ${theme.palette.divider}`, 
+              zIndex:          20 
             }} 
           />
           
           {/* 가로 눈금자 */}
           <Box 
             sx={{ 
-              position: 'absolute', top: 0, left: 20, right: 0, height: 20, 
-              backgroundColor: '#f5f5f5', borderBottom: '1px solid #ccc', zIndex: 15, overflow: 'hidden' 
+              position:        'absolute', 
+              top:             0, 
+              left:            20, 
+              right:           0, 
+              height:          20, 
+              backgroundColor: (theme) => theme.palette.mode === 'dark' ? '#0f172a' : '#f5f5f5', 
+              borderBottom:    (theme) => `1px solid ${theme.palette.divider}`, 
+              zIndex:          15, 
+              overflow:        'hidden' 
             }}
           >
             <canvas ref={hRulerRef} style={{ width: '100%', height: '100%', display: 'block' }} />
             <Box 
               ref={hGuideRef} 
               sx={{ 
-                position: 'absolute', top: 0, bottom: 0, width: '1px', 
-                backgroundColor: 'red', display: 'none', pointerEvents: 'none', zIndex: 16 
+                position:        'absolute', 
+                top:             0, 
+                bottom:          0, 
+                width:           '1px', 
+                backgroundColor: 'red', 
+                display:         'none', 
+                pointerEvents:   'none', 
+                zIndex:          16 
               }} 
             />
           </Box>
@@ -2026,16 +2048,29 @@ const LabelDesignPage = () => {
           {/* 세로 눈금자 */}
           <Box 
             sx={{ 
-              position: 'absolute', top: 20, left: 0, bottom: 0, width: 20, 
-              backgroundColor: '#f5f5f5', borderRight: '1px solid #ccc', zIndex: 15, overflow: 'hidden' 
+              position:        'absolute', 
+              top:             20, 
+              left:            0, 
+              bottom:          0, 
+              width:           20, 
+              backgroundColor: (theme) => theme.palette.mode === 'dark' ? '#0f172a' : '#f5f5f5', 
+              borderRight:     (theme) => `1px solid ${theme.palette.divider}`, 
+              zIndex:          15, 
+              overflow:        'hidden' 
             }}
           >
             <canvas ref={vRulerRef} style={{ width: '100%', height: '100%', display: 'block' }} />
             <Box 
               ref={vGuideRef} 
               sx={{ 
-                position: 'absolute', left: 0, right: 0, height: '1px', 
-                backgroundColor: 'red', display: 'none', pointerEvents: 'none', zIndex: 16 
+                position:        'absolute', 
+                left:            0, 
+                right:           0, 
+                height:          '1px', 
+                backgroundColor: 'red', 
+                display:         'none', 
+                pointerEvents:   'none', 
+                zIndex:          16 
               }} 
             />
           </Box>
@@ -2088,7 +2123,7 @@ const LabelDesignPage = () => {
                   sx={{ 
                     width:           `${parseFloat(layout.labelW)||100}mm`, 
                     height:          `${parseFloat(layout.labelH)||50}mm`, 
-                    backgroundColor: '#fff', 
+                    backgroundColor: (theme) => theme.palette.layout.design.paper, 
                     position:        'absolute', 
                     top:             0, 
                     left:            0, 
@@ -2096,7 +2131,7 @@ const LabelDesignPage = () => {
                     transform:       `scale(${zoom})`, 
                     transformOrigin: '0 0', 
                     ...(showGrid && { 
-                      backgroundImage:    `radial-gradient(circle at 0 0, rgba(0,0,0,0.3) 1px, transparent 1px)`, 
+                      backgroundImage:    (theme) => `radial-gradient(circle at 0 0, ${theme.palette.layout.design.grid} 1px, transparent 1px)`, 
                       backgroundSize:     `${safeGridSize * MM_PX_UNIT}px ${safeGridSize * MM_PX_UNIT}px`, 
                       backgroundPosition: `0 0` 
                     }) 
@@ -2124,7 +2159,7 @@ const LabelDesignPage = () => {
                     
                     const hiddenCells = getHiddenCells(item);
 
-                    // ★ CSS Grid 'fr' 및 SVG 비율 100% 강제 동기화 렌더링 로직 (Auto-Fill)
+                    // CSS Grid 'fr' 및 SVG 비율 100% 강제 동기화 렌더링 로직 (Auto-Fill)
                     const colRatios = item.colRatios || Array(item.cols).fill(100/(item.cols||1));
                     const rowRatios = item.rowRatios || Array(item.rows).fill(100/(item.rows||1));
                     
@@ -2452,7 +2487,7 @@ const LabelDesignPage = () => {
                                     </svg>
                                   )}
 
-                                  {/* ★ Grid Template 변경: % 대신 fr(Fraction) 단위 강제 할당으로 100% 꽉 채우기 적용 */}
+                                  {/* Grid Template 변경: % 대신 fr(Fraction) 단위 강제 할당으로 100% 꽉 채우기 적용 */}
                                   <Box 
                                     sx={{ 
                                       width:               '100%', 
@@ -2706,14 +2741,14 @@ const LabelDesignPage = () => {
                    variant="outlined" 
                    sx={{ 
                      p:               1.5, 
-                     backgroundColor: 'rgba(2, 136, 209, 0.08)', 
-                     borderColor:     'info.main'
+                     backgroundColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(56, 189, 248, 0.1)' : 'rgba(2, 136, 209, 0.08)', 
+                     borderColor:     (theme) => theme.palette.mode === 'dark' ? '#38bdf8' : 'info.main'
                    }}
                  >
                    <Typography 
                      variant="caption" 
                      fontWeight="bold" 
-                     color="info.main" 
+                     color={(theme) => theme.palette.mode === 'dark' ? '#38bdf8' : 'info.main'}
                      display="block" 
                      mb={1}
                    >
@@ -2732,7 +2767,6 @@ const LabelDesignPage = () => {
                        setIsMasterFocused(false);
                        takeSnapshot();
                      }}
-                     sx={{ backgroundColor: '#fff' }}
                      helperText={`구분자 '${layout.delimiter || '없음'}' 기준으로 각 데이터 셀에 자동 분배됩니다.`}
                    />
                  </MuiPaper>
@@ -3721,7 +3755,7 @@ const LabelDesignPage = () => {
                         display:         'flex', 
                         alignItems:      'center', 
                         gap:             1, 
-                        border:          selectedIds.includes(item.id) ? '1.5px solid #1976d2' : '1px solid', 
+                        border:          selectedIds.includes(item.id) ? (theme) => `1.5px solid ${theme.palette.primary.main}` : '1px solid', 
                         borderColor:     'divider', 
                         cursor:          'pointer', 
                         backgroundColor: selectedIds.includes(item.id) ? 'action.selected' : 'background.paper' 
@@ -3777,8 +3811,8 @@ const LabelDesignPage = () => {
                                  mb:              0.5, 
                                  display:         'flex', 
                                  alignItems:      'center', 
-                                 backgroundColor: 'rgba(0,0,0,0.02)', 
-                                 border:          '1px solid #eee' 
+                                 backgroundColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.02)', 
+                                 border:          (theme) => `1px solid ${theme.palette.divider}` 
                                }}
                              >
                                 <Typography 

@@ -1,6 +1,7 @@
 /**
  * @file        LabelPrintPage.jsx
  * @description 라벨 발행 관리 및 인쇄 시스템 페이지
+ * - [버그수정] 다크모드 전환 시 텍스트 박스들에 남아있던 강제 하얀 배경(하드코딩) 완벽 제거 및 테마 연동
  * - [버그수정] 표(Table) 병합(Merge) 시 가려진 유령 셀에 대한 '데이터 입력 필드(TextField)'가 좌측 패널에 계속 생성되던 치명적 버그 완벽 해결 (UI 렌더링 필터링 적용)
  * - [버그수정] 일괄 데이터 입력창(마스터 필드)에 날짜(Date) 객체 데이터가 잘못 취합되어 1번 가변 데이터 필드로 밀려 들어가던 치명적 버그 완벽 해결
  * - [버그수정] 일괄 데이터 입력창(마스터 필드) 타이핑 시 스페이스바 튕김 및 글자 밀림 현상 완벽 해결 (포커스 디커플링 상태 연결)
@@ -725,12 +726,13 @@ const LabelPrintPage = () => {
   return (
     <Box 
       sx={{ 
-        display:       'flex', 
-        flexDirection: 'column', 
-        gap:           2,
-        height:        'calc(100vh - 160px)', 
-        width:         '100%',
-        overflow:      'hidden' 
+        display:         'flex', 
+        flexDirection:   'column', 
+        gap:             2,
+        height:          'calc(100vh - 160px)', 
+        width:           '100%',
+        overflow:        'hidden',
+        backgroundColor: 'background.default' 
       }}
     >
       <Stack 
@@ -896,14 +898,14 @@ const LabelPrintPage = () => {
                   sx={{ 
                     p:               1.5, 
                     mb:              1, 
-                    backgroundColor: 'rgba(2, 136, 209, 0.08)', 
-                    borderColor:     'info.main' 
+                    backgroundColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(56, 189, 248, 0.1)' : 'rgba(2, 136, 209, 0.08)', 
+                    borderColor:     (theme) => theme.palette.mode === 'dark' ? '#38bdf8' : 'info.main' 
                   }}
                 >
                   <Typography 
                     variant="caption" 
                     fontWeight="bold" 
-                    color="info.main" 
+                    color={(theme) => theme.palette.mode === 'dark' ? '#38bdf8' : 'info.main'} 
                     display="block" 
                     mb={1}
                   >
@@ -919,7 +921,6 @@ const LabelPrintPage = () => {
                     onChange={handleMasterDataChange} 
                     onFocus={() => setIsMasterFocused(true)}
                     onBlur={() => setIsMasterFocused(false)}
-                    sx={{ backgroundColor: '#fff' }} 
                     helperText={`구분자 '${layout.delimiter || '없음'}' 기준으로 아래 필드에 분배됩니다.`} 
                   />
                 </Paper>
@@ -1211,7 +1212,7 @@ const LabelPrintPage = () => {
                 sx={{ 
                   zoom:            zoom, 
                   boxShadow:       '0 10px 30px rgba(0,0,0,0.2)', 
-                  backgroundColor: '#ffffff', 
+                  backgroundColor: (theme) => theme.palette.layout.design.paper, 
                   paddingTop:      `${parseFloat(layout.marginTop || 0)}mm`, 
                   paddingLeft:     `${parseFloat(layout.marginLeft || 0)}mm`, 
                   paddingRight:    `${parseFloat(layout.marginLeft || 0)}mm`, 
