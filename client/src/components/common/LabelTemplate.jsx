@@ -7,6 +7,7 @@
  * - [버그수정] 표(Table) 셀 병합(Span) 시 뒷면에 가려지는 유령 셀 필터링(숨김) 및 데이터 취합 무시 로직 적용
  * - [렌더링동기화] 디자인 페이지의 최신 렌더링 방식(SVG 중앙 선두께, 표 선 겹침 방지, 0.1mm 지원) 이식
  * - [버그수정] 데이터가 비어있을 때("") 구분자가 결합되어 띄어쓰기가 생기던 오류 수정 (빈 값 필터링)
+ * - [버그수정] 편집기에서 설정한 개별 셀 테두리(상/하/좌/우) On/Off 상태가 인쇄/미리보기에 반영되도록 통짜 <rect> 렌더링을 4개의 <line>으로 전면 교체
  */
 
 import React, { 
@@ -167,7 +168,7 @@ const LabelTemplate = forwardRef(({
         boxSizing:       'border-box', 
         breakInside:     'avoid', 
         pageBreakInside: 'avoid', 
-        overflow:        'hidden',
+        overflow:        'hidden'
       }}
     >
       {/* 레이어 역순(Z-Index) 매핑 렌더링 */}
@@ -417,7 +418,7 @@ const LabelTemplate = forwardRef(({
 
               {/* --- 6. 표(Table) 복합 개체 (정밀 SVG 오버레이) --- */}
               {item.type === 'table' && (() => {
-                const bw = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
+                const bw          = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
                 const strokeColor = item.stroke || PRINT_COLORS.foreground;
                 const showBorders = item.showBorder !== false && bw > 0;
                 
@@ -441,7 +442,7 @@ const LabelTemplate = forwardRef(({
                       }} 
                     />
 
-                    {/* SVG 비율 기반 정밀 선 렌더링 */}
+                    {/* ★ 버그 수정: 통짜 rect 대신 엑셀처럼 속성값(borderTop 등)에 따라 개별적으로 렌더링되도록 4개의 line으로 교체 */}
                     {showBorders && (
                       <svg 
                         width="100%" 
@@ -457,18 +458,57 @@ const LabelTemplate = forwardRef(({
                       >
                         {item.cells?.map((cell, idx) => {
                           if (hiddenCells.has(`${cell.row}_${cell.col}`)) return null;
+
+                          const x1 = getColPos(cell.col);
+                          const y1 = getRowPos(cell.row);
+                          const w  = getColWidth(cell.col, cell.colSpan);
+                          const h  = getRowHeight(cell.row, cell.rowSpan);
+                          const x2 = x1 + w;
+                          const y2 = y1 + h;
                           
                           return (
-                            <rect 
-                              key={idx}
-                              x={`${getColPos(cell.col)}%`}
-                              y={`${getRowPos(cell.row)}%`}
-                              width={`${getColWidth(cell.col, cell.colSpan)}%`}
-                              height={`${getRowHeight(cell.row, cell.rowSpan)}%`}
-                              fill="none"
-                              stroke={strokeColor}
-                              strokeWidth={`${bw}mm`}
-                            />
+                            <g key={idx}>
+                              {cell.borderTop !== false && (
+                                <line 
+                                  x1={`${x1}%`} 
+                                  y1={`${y1}%`} 
+                                  x2={`${x2}%`} 
+                                  y2={`${y1}%`} 
+                                  stroke={strokeColor} 
+                                  strokeWidth={`${bw}mm`} 
+                                />
+                              )}
+                              {cell.borderRight !== false && (
+                                <line 
+                                  x1={`${x2}%`} 
+                                  y1={`${y1}%`} 
+                                  x2={`${x2}%`} 
+                                  y2={`${y2}%`} 
+                                  stroke={strokeColor} 
+                                  strokeWidth={`${bw}mm`} 
+                                />
+                              )}
+                              {cell.borderBottom !== false && (
+                                <line 
+                                  x1={`${x1}%`} 
+                                  y1={`${y2}%`} 
+                                  x2={`${x2}%`} 
+                                  y2={`${y2}%`} 
+                                  stroke={strokeColor} 
+                                  strokeWidth={`${bw}mm`} 
+                                />
+                              )}
+                              {cell.borderLeft !== false && (
+                                <line 
+                                  x1={`${x1}%`} 
+                                  y1={`${y1}%`} 
+                                  x2={`${x1}%`} 
+                                  y2={`${y2}%`} 
+                                  stroke={strokeColor} 
+                                  strokeWidth={`${bw}mm`} 
+                                />
+                              )}
+                            </g>
                           );
                         })}
                       </svg>

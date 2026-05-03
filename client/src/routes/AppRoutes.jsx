@@ -21,11 +21,10 @@ import LoginPage from '../pages/auth/LoginPage';
 
 // 시스템 페이지 컴포넌트 임포트 (이력 조회 페이지 2개 분리 적용)
 import BarcodeScanPage from '../pages/system/BarcodeScanPage';
-import BarcodeScanHistoryPage from '../pages/system/BarcodeScanHistoryPage'; // 신규: 스캔 이력
+import BarcodeScanHistoryPage from '../pages/system/BarcodeScanHistoryPage';
 import LabelPrintPage from '../pages/system/LabelPrintPage'; 
-import LabelPrintHistoryPage from '../pages/system/LabelPrintHistoryPage';   // 변경: 발행 이력
-import LabelDesignPage from '../pages/system/LabelDesignPage';
-
+import LabelPrintHistoryPage from '../pages/system/LabelPrintHistoryPage';
+import LabelDesignPage from "../pages/system/label-design/LabelDesignPage";
 import useAppStore from '../store/useAppStore';
 
 const AppRoutes = () => {
