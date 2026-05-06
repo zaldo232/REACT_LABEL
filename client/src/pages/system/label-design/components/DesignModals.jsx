@@ -1,8 +1,6 @@
 /**
  * @file        DesignModals.jsx
  * @description 라벨 디자인 페이지에서 호출되는 모든 팝업(Dialog) 모음 컴포넌트
- * - [포맷팅] 프로젝트 규칙에 따른 JSX 속성 및 Object 내부 수직 정렬 완벽 적용
- * - [기능] 서버에 저장된 라벨 템플릿 목록 조회, 불러오기 및 삭제 기능 지원
  */
 
 import React from 'react';
@@ -16,11 +14,13 @@ import {
   ListItem, 
   ListItemButton, 
   ListItemText,
+  ListItemIcon,
   IconButton
 } from '@mui/material';
 
 // 아이콘 임포트
 import CloseIcon from '@mui/icons-material/Close';
+import TableViewIcon from '@mui/icons-material/TableView';
 
 // =========================================================================
 // [컴포넌트] DesignModals
@@ -34,7 +34,13 @@ const DesignModals = ({
   layout,
   setLayout,
   initItems,
-  handleDeleteTemplate
+  handleDeleteTemplate,
+  
+  // ★ 엑셀 시트 선택 관련 Props
+  openExcelSheetDialog,
+  setOpenExcelSheetDialog,
+  excelSheetNames,
+  onSelectExcelSheet
 }) => {
 
   // =========================================================================
@@ -51,8 +57,22 @@ const DesignModals = ({
         fullWidth 
         maxWidth="xs"
       >
-        <DialogTitle>
+        <DialogTitle 
+          sx={{ 
+            m:              0, 
+            p:              2, 
+            display:        'flex', 
+            justifyContent: 'space-between', 
+            alignItems:     'center' 
+          }}
+        >
           디자인 불러오기
+          <IconButton 
+            onClick={() => setOpenDbDialog(false)} 
+            size="small"
+          >
+            <CloseIcon />
+          </IconButton>
         </DialogTitle>
         
         <DialogContent dividers>
@@ -93,6 +113,57 @@ const DesignModals = ({
                   <ListItemText 
                     primary={t.TemplateName} 
                     secondary={`${t.LabelW}x${t.LabelH}mm`} 
+                  />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
+        </DialogContent>
+      </Dialog>
+
+      {/* ------------------------------------------------------------------------- */}
+      {/* 2. 엑셀 멀티 시트 선택 모달 다이얼로그 (신규) */}
+      {/* ------------------------------------------------------------------------- */}
+      <Dialog 
+        open={openExcelSheetDialog} 
+        onClose={() => setOpenExcelSheetDialog(false)} 
+        fullWidth 
+        maxWidth="xs"
+      >
+        <DialogTitle 
+          sx={{ 
+            m:              0, 
+            p:              2, 
+            display:        'flex', 
+            justifyContent: 'space-between', 
+            alignItems:     'center' 
+          }}
+        >
+          표를 생성할 엑셀 시트 선택
+          <IconButton 
+            onClick={() => setOpenExcelSheetDialog(false)} 
+            size="small"
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        
+        <DialogContent dividers>
+          <List>
+            {excelSheetNames?.map((sheetName, idx) => (
+              <ListItem 
+                key={idx} 
+                disablePadding
+              >
+                <ListItemButton 
+                  onClick={() => onSelectExcelSheet(sheetName)}
+                >
+                  <ListItemIcon>
+                    <TableViewIcon color="primary" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary={sheetName} 
+                    secondary={`시트 인덱스: ${idx + 1}`} 
                   />
                 </ListItemButton>
               </ListItem>

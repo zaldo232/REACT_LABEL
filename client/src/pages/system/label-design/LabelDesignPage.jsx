@@ -1,8 +1,6 @@
 /**
  * @file        LabelDesignPage.jsx
  * @description 전문 디자인 툴 방식의 라벨 편집기 메인 컴포넌트 (조립 공장)
- * - [버그수정] Table Cell Shift 범위 선택을 위해 engine.refs에서 분리 선언된 올바른 참조값 직접 매핑
- * - [UX개선] 마스터 입력창(가변 데이터 일괄 편집)이 표(Table) 선택 시 무조건 뜨는 현상 방지. 오직 바코드/QR 셀 선택 시에만 노출.
  */
 
 import React, { 
@@ -120,7 +118,7 @@ const LabelDesignPage = () => {
     ? targetItem.cells.find(c => c.row === history.selectedCells[0].row && c.col === history.selectedCells[0].col)
     : null;
 
-  // ★ 버그 수정: 표(table)를 클릭했다고 무조건 띄우지 않고, 바코드/QR코드 개체거나, 셀 타입이 바코드/QR일 때만 노출
+  // 마스터 입력창(가변 데이터 일괄 편집) 노출 조건
   const isMasterInputVisible = history.selectedIds.length === 1 && (
     ['barcode', 'qrcode'].includes(targetItem?.type) ||
     (activeCell && ['barcode', 'qrcode'].includes(activeCell.cellType))
@@ -292,6 +290,11 @@ const LabelDesignPage = () => {
         setLayout={setLayout}
         initItems={history.initItems}
         handleDeleteTemplate={fileIO.handleDeleteTemplate}
+        
+        openExcelSheetDialog={fileIO.openExcelSheetDialog}
+        setOpenExcelSheetDialog={fileIO.setOpenExcelSheetDialog}
+        excelSheetNames={fileIO.excelSheetNames}
+        onSelectExcelSheet={fileIO.onSelectExcelSheet}
       />
 
     </Box>

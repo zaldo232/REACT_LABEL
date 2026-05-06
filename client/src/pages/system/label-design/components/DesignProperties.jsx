@@ -1,8 +1,6 @@
 /**
  * @file        DesignProperties.jsx
  * @description 라벨 디자인 페이지의 우측 상단 속성(Properties) 제어 패널
- * - [UX 개선] 엑셀처럼 테두리를 켜거나 끌 때, 맞닿은 인접 셀의 테두리도 함께 제어되는 동기화 로직 추가
- * - [포맷팅] 프로젝트 코딩 규칙에 따른 JSX 속성 수직 정렬 및 완벽한 코드 보존 적용
  */
 
 import React from 'react';
@@ -24,7 +22,9 @@ import {
   Select, 
   MenuItem, 
   FormControl, 
-  InputLabel 
+  InputLabel,
+  ToggleButton,
+  ToggleButtonGroup
 } from '@mui/material';
 
 // 아이콘 임포트
@@ -49,6 +49,11 @@ import KeyboardDoubleArrowUpIcon from '@mui/icons-material/KeyboardDoubleArrowUp
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardDoubleArrowDownIcon from '@mui/icons-material/KeyboardDoubleArrowDown';
+
+// 텍스트 정렬 아이콘 (신규 추가)
+import FormatAlignLeftIcon from '@mui/icons-material/FormatAlignLeft';
+import FormatAlignCenterIcon from '@mui/icons-material/FormatAlignCenter';
+import FormatAlignRightIcon from '@mui/icons-material/FormatAlignRight';
 
 // 테두리(Border) 제어 전용 엑셀 스타일 아이콘
 import BorderTopIcon from '@mui/icons-material/BorderTop';
@@ -351,18 +356,40 @@ const DesignProperties = ({
                 />
               </Stack>
               
-              {!['text', 'data', 'date'].includes(targetItem?.type) && (
-                <Stack 
-                  direction="row" 
-                  spacing={1} 
-                  sx={{ mt: 2 }}
-                >
-                  {targetItem?.type === 'qrcode' ? (
+              <Stack 
+                direction="row" 
+                spacing={1} 
+                sx={{ mt: 2 }}
+              >
+                {targetItem?.type === 'qrcode' ? (
+                  <TextField 
+                    label="크기(W/H)" 
+                    type="number" 
+                    size="small" 
+                    fullWidth 
+                    value={targetItem?.width ?? ''} 
+                    onChange={(e) => updateItem(selectedIds[0], 'width', e.target.value, false)} 
+                    onBlur={(e) => {
+                      let val = parseFloat(e.target.value);
+                      if(isNaN(val) || val < 0.1) val = 10;
+                      const maxW = parseFloat(layout.labelW) || 100;
+                      const cx   = parseFloat(targetItem.x) || 0;
+                      if(cx + val > maxW) val = maxW - cx;
+                      updateItem(selectedIds[0], 'width', Number(val), true);
+                      updateItem(selectedIds[0], 'height', Number(val), true);
+                    }}
+                    inputProps={{ 
+                      step: 0.1, 
+                      min:  0.1 
+                    }}
+                  />
+                ) : (
+                  <>
+                    {/* ★ 핵심 수정: 텍스트 개체도 W/H 속성창을 활성화하여 직접 입력 가능하게 변경 */}
                     <TextField 
-                      label="크기(W/H)" 
+                      label="너비(W)" 
                       type="number" 
                       size="small" 
-                      fullWidth 
                       value={targetItem?.width ?? ''} 
                       onChange={(e) => updateItem(selectedIds[0], 'width', e.target.value, false)} 
                       onBlur={(e) => {
@@ -372,59 +399,36 @@ const DesignProperties = ({
                         const cx   = parseFloat(targetItem.x) || 0;
                         if(cx + val > maxW) val = maxW - cx;
                         updateItem(selectedIds[0], 'width', Number(val), true);
-                        updateItem(selectedIds[0], 'height', Number(val), true);
                       }}
                       inputProps={{ 
                         step: 0.1, 
                         min:  0.1 
                       }}
                     />
-                  ) : (
-                    <>
+                    {targetItem?.type !== 'line' && (
                       <TextField 
-                        label="너비(W)" 
+                        label="높이(H)" 
                         type="number" 
                         size="small" 
-                        value={targetItem?.width ?? ''} 
-                        onChange={(e) => updateItem(selectedIds[0], 'width', e.target.value, false)} 
+                        value={targetItem?.height ?? ''} 
+                        onChange={(e) => updateItem(selectedIds[0], 'height', e.target.value, false)} 
                         onBlur={(e) => {
                           let val = parseFloat(e.target.value);
                           if(isNaN(val) || val < 0.1) val = 10;
-                          const maxW = parseFloat(layout.labelW) || 100;
-                          const cx   = parseFloat(targetItem.x) || 0;
-                          if(cx + val > maxW) val = maxW - cx;
-                          updateItem(selectedIds[0], 'width', Number(val), true);
+                          const maxH = parseFloat(layout.labelH) || 50;
+                          const cy   = parseFloat(targetItem.y) || 0;
+                          if(cy + val > maxH) val = maxH - cy;
+                          updateItem(selectedIds[0], 'height', Number(val), true);
                         }}
                         inputProps={{ 
                           step: 0.1, 
                           min:  0.1 
                         }}
                       />
-                      {targetItem?.type !== 'line' && (
-                        <TextField 
-                          label="높이(H)" 
-                          type="number" 
-                          size="small" 
-                          value={targetItem?.height ?? ''} 
-                          onChange={(e) => updateItem(selectedIds[0], 'height', e.target.value, false)} 
-                          onBlur={(e) => {
-                            let val = parseFloat(e.target.value);
-                            if(isNaN(val) || val < 0.1) val = 10;
-                            const maxH = parseFloat(layout.labelH) || 50;
-                            const cy   = parseFloat(targetItem.y) || 0;
-                            if(cy + val > maxH) val = maxH - cy;
-                            updateItem(selectedIds[0], 'height', Number(val), true);
-                          }}
-                          inputProps={{ 
-                            step: 0.1, 
-                            min:  0.1 
-                          }}
-                        />
-                      )}
-                    </>
-                  )}
-                </Stack>
-              )}
+                    )}
+                  </>
+                )}
+              </Stack>
 
               <MuiPaper 
                 variant="outlined" 
@@ -573,6 +577,35 @@ const DesignProperties = ({
                 데이터 및 내용 (Content)
               </Typography>
 
+              {/* ★ 가변 데이터 필드일 때 노출되는 바코드 포함 스위치 */}
+              {(targetItem?.type === 'data' || targetItem?.type === 'date') && (
+                <MuiPaper 
+                  variant="outlined" 
+                  sx={{ 
+                    p:               1, 
+                    backgroundColor: 'rgba(76, 175, 80, 0.05)', 
+                    border:          '1px dashed #4caf50',
+                    mb:              1
+                  }}
+                >
+                  <FormControlLabel 
+                    control={
+                      <Checkbox 
+                        size="small" 
+                        color="success"
+                        checked={targetItem?.useInCode !== false} 
+                        onChange={(e) => updateItem(selectedIds[0], 'useInCode', e.target.checked, true)} 
+                      />
+                    } 
+                    label={
+                      <Typography variant="caption" fontWeight="bold" color="success.main">
+                        바코드/QR 데이터 조합에 포함
+                      </Typography>
+                    } 
+                  />
+                </MuiPaper>
+              )}
+
               {isMasterInputVisible && (
                 <MuiPaper 
                   variant="outlined" 
@@ -615,6 +648,7 @@ const DesignProperties = ({
                 <TextField 
                   label="Content (내용)" 
                   size="small" 
+                  fullWidth 
                   multiline 
                   minRows={2} 
                   value={targetItem?.content || ''} 
@@ -747,6 +781,39 @@ const DesignProperties = ({
                          <FormatItalicIcon fontSize="small" />
                        </IconButton>
                      </Tooltip>
+                   </Stack>
+                   
+                   {/* ★ 글자 정렬 버튼 UI 추가 */}
+                   <Stack 
+                     direction="row" 
+                     spacing={1} 
+                     alignItems="center" 
+                     mt={1.5}
+                   >
+                     <Typography 
+                       variant="caption" 
+                       fontWeight="bold"
+                     >
+                       글자 정렬
+                     </Typography>
+                     <ToggleButtonGroup
+                       value={targetItem?.textAlign || 'left'}
+                       exclusive
+                       size="small"
+                       onChange={(e, val) => {
+                         if (val !== null) updateItem(selectedIds[0], 'textAlign', val, true);
+                       }}
+                     >
+                       <ToggleButton value="left">
+                         <FormatAlignLeftIcon fontSize="small" />
+                       </ToggleButton>
+                       <ToggleButton value="center">
+                         <FormatAlignCenterIcon fontSize="small" />
+                       </ToggleButton>
+                       <ToggleButton value="right">
+                         <FormatAlignRightIcon fontSize="small" />
+                       </ToggleButton>
+                     </ToggleButtonGroup>
                    </Stack>
                 </MuiPaper>
               )}
@@ -970,6 +1037,22 @@ const DesignProperties = ({
                       </Typography>
                     </Stack>
 
+                    {/* ★ 셀용 바코드 포함(useInCode) 설정 UI 추가 */}
+                    {(repCell?.cellType === 'data' || repCell?.cellType === 'date') && selectedCells.length === 1 && (
+                      <FormControlLabel 
+                        control={
+                          <Checkbox 
+                            size="small" 
+                            color="success"
+                            checked={repCell?.useInCode !== false} 
+                            onChange={(e) => updateTableCell(targetItem.id, repCell.row, repCell.col, { useInCode: e.target.checked }, true)} 
+                          />
+                        } 
+                        label={<Typography variant="caption" fontWeight="bold" color="success.main">바코드 데이터에 포함</Typography>} 
+                        sx={{ mb: 1, display: 'block' }}
+                      />
+                    )}
+
                     {/* ★ 엑셀 표 스타일 테두리(Border) 제어 UI (다중 셀 동시 제어 지원) */}
                     <Typography 
                       variant="caption" 
@@ -1059,24 +1142,50 @@ const DesignProperties = ({
                         />
 
                         {['text', 'data', 'date'].includes(repCell.cellType) && (
-                          <TextField 
-                            label="셀 폰트 크기(pt) - 미입력시 상속" 
-                            type="number" 
-                            size="small" 
-                            fullWidth 
-                            value={repCell.fontSize || ''} 
-                            onChange={(e) => updateTableCell(targetItem.id, repCell.row, repCell.col, { fontSize: e.target.value }, false)} 
-                            onBlur={(e) => {
-                              let val = parseFloat(e.target.value);
-                              if (isNaN(val) || val < 1) val = ''; 
-                              updateTableCell(targetItem.id, repCell.row, repCell.col, { fontSize: val === '' ? '' : String(val) }, true);
-                            }}
-                            inputProps={{ 
-                              step: 0.5, 
-                              min:  1 
-                            }} 
+                          <Stack 
+                            direction="row" 
+                            spacing={1} 
+                            alignItems="center" 
                             sx={{ mb: 1 }}
-                          />
+                          >
+                            <TextField 
+                              label="폰트 크기(pt)" 
+                              type="number" 
+                              size="small" 
+                              fullWidth 
+                              value={repCell.fontSize || ''} 
+                              onChange={(e) => updateTableCell(targetItem.id, repCell.row, repCell.col, { fontSize: e.target.value }, false)} 
+                              onBlur={(e) => {
+                                let val = parseFloat(e.target.value);
+                                if (isNaN(val) || val < 1) val = ''; 
+                                updateTableCell(targetItem.id, repCell.row, repCell.col, { fontSize: val === '' ? '' : String(val) }, true);
+                              }}
+                              inputProps={{ 
+                                step: 0.5, 
+                                min:  1 
+                              }} 
+                            />
+                            
+                            {/* ★ 표(Table) 내부 개별 셀 정렬 버튼 UI 추가 */}
+                            <ToggleButtonGroup
+                              value={repCell.textAlign || 'center'}
+                              exclusive
+                              size="small"
+                              onChange={(e, val) => {
+                                if (val !== null) updateTableCell(targetItem.id, repCell.row, repCell.col, { textAlign: val }, true);
+                              }}
+                            >
+                              <ToggleButton value="left">
+                                <FormatAlignLeftIcon fontSize="small" />
+                              </ToggleButton>
+                              <ToggleButton value="center">
+                                <FormatAlignCenterIcon fontSize="small" />
+                              </ToggleButton>
+                              <ToggleButton value="right">
+                                <FormatAlignRightIcon fontSize="small" />
+                              </ToggleButton>
+                            </ToggleButtonGroup>
+                          </Stack>
                         )}
 
                         <Typography 
@@ -1175,7 +1284,6 @@ const DesignProperties = ({
                           </Select>
                         </FormControl>
                         
-                        {/* ★ 바코드, QR코드에서는 무의미했던 dataId 입력창을 완벽히 제거. 오직 data 타입일 때만 활성화. */}
                         {repCell.cellType === 'data' && (
                           <TextField 
                             label="가변 데이터 ID" 

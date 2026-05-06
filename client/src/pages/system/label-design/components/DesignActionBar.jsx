@@ -1,9 +1,6 @@
 /**
  * @file        DesignActionBar.jsx
  * @description 라벨 디자인 페이지의 상단 툴바 컴포넌트 (화면 배율, 격자 설정, 파일 입출력 및 저장)
- * - [코드규칙 적용] Props 3개 이상 시 무조건 줄바꿈 및 수직 정렬 완료
- * - [코드규칙 적용] 객체(Object) 선언 내부 요소 줄바꿈 정렬 완료
- * - [UX 처리] 격자 간격 입력창 값을 완전히 지웠을 때 발생하는 NaN 에러 엣지 케이스 방지
  */
 
 import React from 'react';

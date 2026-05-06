@@ -1,8 +1,6 @@
 /**
  * @file        useDesignEngine.js
  * @description 라벨 디자인 캔버스의 조작을 총괄하는 코어 엔진
- * - [기능추가] 신규 표(Table)를 캔버스에 생성할 때, 각 셀마다 상/하/좌/우 테두리 상태 기본값(true) 부여
- * - [포맷팅] 프로젝트 규칙에 따라 모든 Object 속성, 파라미터, Return 객체, 이벤트 핸들러 로직의 줄바꿈 및 수직 정렬 완벽 적용
  */
 
 import { 
@@ -298,7 +296,7 @@ const useDesignEngine = ({
     if (selectedIds.length < 2) return;
     
     const selectedItems = items.filter((i) => selectedIds.includes(i.id));
-    const bboxes        = selectedItems.map(item => ({ item, bbox: getRealBBox(item) }));
+    const bboxes         = selectedItems.map(item => ({ item, bbox: getRealBBox(item) }));
     
     const minX       = Math.min(...bboxes.map(b => b.bbox.x));
     const maxX       = Math.max(...bboxes.map(b => b.bbox.x + b.bbox.w));
@@ -397,7 +395,7 @@ const useDesignEngine = ({
       const [item]   = newItems.splice(index, 1);
       
       if (action === 'front') {
-        newItems.unshift(item);              
+        newItems.unshift(item);               
       } else if (action === 'back') {
         newItems.push(item);                 
       } else if (action === 'forward') {
@@ -425,7 +423,7 @@ const useDesignEngine = ({
     let hasAnyContent   = false;
     
     items.forEach((i) => {
-      if (i.type === 'data') {
+      if (i.type === 'data' && i.useInCode !== false) {
         let val = i.content || '';
         if (val !== '') {
           hasAnyContent = true;
@@ -435,7 +433,7 @@ const useDesignEngine = ({
         const hiddenCells = getHiddenCells(i); 
         i.cells.forEach(cell => {
           if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
-          if (cell.cellType === 'data') {
+          if (cell.cellType === 'data' && cell.useInCode !== false) {
             let val = cell.dataId || '';
             if (val !== '') {
               hasAnyContent = true;
@@ -464,7 +462,7 @@ const useDesignEngine = ({
     const combinedParts = [];
     
     items.forEach((i) => {
-      if (i.type === 'data' || i.type === 'date') {
+      if ((i.type === 'data' || i.type === 'date') && i.useInCode !== false) {
         let val = i.type === 'date' 
           ? getKstPreviewDate(i.content || 'YYYY-MM-DD') 
           : (i.content || ''); 
@@ -479,7 +477,7 @@ const useDesignEngine = ({
         const hiddenCells = getHiddenCells(i); 
         i.cells.forEach(cell => {
           if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
-          if (cell.cellType === 'data' || cell.cellType === 'date') {
+          if ((cell.cellType === 'data' || cell.cellType === 'date') && cell.useInCode !== false) {
             let val = cell.cellType === 'date' 
               ? getKstPreviewDate(cell.content || 'YYYY-MM-DD') 
               : (cell.dataId || ''); 
@@ -512,12 +510,12 @@ const useDesignEngine = ({
     setMasterInputText(newValue); 
     
     items.forEach(i => {
-      if (i.type === 'data') {
+      if (i.type === 'data' && i.useInCode !== false) {
         totalFields++;
       } else if (i.type === 'table' && i.cells) {
         const hiddenCells = getHiddenCells(i); 
         i.cells.forEach(c => {
-          if (!hiddenCells.has(`${c.row}_${c.col}`) && c.cellType === 'data') {
+          if (!hiddenCells.has(`${c.row}_${c.col}`) && c.cellType === 'data' && c.useInCode !== false) {
             totalFields++;
           }
         });
@@ -543,7 +541,7 @@ const useDesignEngine = ({
       return prevItems.map((item) => {
         const newItem = { ...item };
         
-        if (newItem.type === 'data') {
+        if (newItem.type === 'data' && newItem.useInCode !== false) {
           let partVal = parts[partIdx] !== undefined ? parts[partIdx] : '';
           newItem.content = partVal; 
           partIdx++;
@@ -552,7 +550,7 @@ const useDesignEngine = ({
           const hiddenCells = getHiddenCells(newItem); 
           
           newItem.cells = newItem.cells.map(cell => {
-            if (!hiddenCells.has(`${cell.row}_${cell.col}`) && cell.cellType === 'data') {
+            if (!hiddenCells.has(`${cell.row}_${cell.col}`) && cell.cellType === 'data' && cell.useInCode !== false) {
               let partVal = parts[partIdx] !== undefined ? parts[partIdx] : '';
               partIdx++;
               return { 
@@ -610,6 +608,7 @@ const useDesignEngine = ({
             content:                 'TEXT', 
             dataId:                  '', 
             showPrefixSuffixOnLabel: true, 
+            useInCode:               true, 
             borderTop:               true, 
             borderRight:             true, 
             borderBottom:            true, 
@@ -694,6 +693,7 @@ const useDesignEngine = ({
             content:                 'TEXT', 
             dataId:                  '', 
             showPrefixSuffixOnLabel: true, 
+            useInCode:               true, 
             borderTop:               true, 
             borderRight:             true, 
             borderBottom:            true, 
@@ -1365,6 +1365,7 @@ const useDesignEngine = ({
         src:                     '', 
         displayValue:            true, 
         showPrefixSuffixOnLabel: true,
+        useInCode:               true, 
         rows:                    activeTool === 'table' ? 2 : undefined, 
         cols:                    activeTool === 'table' ? 2 : undefined, 
         rowRatios:               activeTool === 'table' ? [50, 50] : undefined, 
@@ -1381,6 +1382,7 @@ const useDesignEngine = ({
              prefix:                  '', 
              suffix:                  '', 
              showPrefixSuffixOnLabel: true, 
+             useInCode:               true, 
              cellName:                '', 
              fontSize:                '', 
              borderTop:               true, 
@@ -1399,6 +1401,7 @@ const useDesignEngine = ({
              prefix:                  '', 
              suffix:                  '', 
              showPrefixSuffixOnLabel: true, 
+             useInCode:               true, 
              cellName:                '', 
              fontSize:                '', 
              borderTop:               true, 
@@ -1417,6 +1420,7 @@ const useDesignEngine = ({
              prefix:                  '', 
              suffix:                  '', 
              showPrefixSuffixOnLabel: true, 
+             useInCode:               true, 
              cellName:                '', 
              fontSize:                '', 
              borderTop:               true, 
@@ -1435,6 +1439,7 @@ const useDesignEngine = ({
              prefix:                  '', 
              suffix:                  '', 
              showPrefixSuffixOnLabel: true, 
+             useInCode:               true, 
              cellName:                '', 
              fontSize:                '', 
              borderTop:               true, 

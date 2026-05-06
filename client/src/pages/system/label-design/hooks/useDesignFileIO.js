@@ -1,9 +1,6 @@
 /**
  * @file        useDesignFileIO.js
  * @description 라벨 디자인 페이지의 외부 데이터 입출력(File I/O) 및 서버 API 통신을 전담하는 커스텀 훅
- * - [포맷팅] 프로젝트 규칙에 따른 Object 내부 속성, 파라미터, 반환(Return) 객체의 완벽한 수직 정렬 및 줄바꿈 적용
- * - [기능] 엑셀(.xlsx) 파싱 및 표 자동 생성, JSON/PNG 파일 로컬 내보내기/불러오기, 이미지 파일 첨부
- * - [API] 서버 DB 템플릿 목록 조회, 저장, 삭제 기능
  */
 
 import { 
@@ -42,17 +39,30 @@ const useDesignFileIO = ({
   // -------------------------------------------------------------------------
   // 1. 상태 및 Ref 선언
   // -------------------------------------------------------------------------
-  const [openDbDialog, setOpenDbDialog] = useState(false);
-  const [dbList, setDbList]             = useState([]);
+  const [openDbDialog, setOpenDbDialog]                 = useState(false);
+  const [dbList, setDbList]                             = useState([]);
   
+  // ★ 멀티 시트 선택을 위한 모달 및 시트 이름 상태 (UI용)
+  const [openExcelSheetDialog, setOpenExcelSheetDialog] = useState(false);
+  const [excelSheetNames, setExcelSheetNames]           = useState([]);
+  
+  // ★ 버그 해결: 렌더링을 유발하는 useState 대신, 거대한 엑셀 데이터는 useRef에 안전하게 은닉 보관
+  const excelWorkbookRef                                = useRef(null);
+  const excelFileNameRef                                = useRef('');
+
   // 파일 입력을 위한 DOM Refs
-  const excelLayoutInputRef = useRef(null);
-  const fileInputRef        = useRef(null);
-  const imageInputRef       = useRef(null);
+  const excelLayoutInputRef                             = useRef(null);
+  const fileInputRef                                    = useRef(null);
+  const imageInputRef                                   = useRef(null);
 
   // -------------------------------------------------------------------------
   // 2. 엑셀 템플릿 파싱 로직 (.xlsx -> Table 개체 변환)
   // -------------------------------------------------------------------------
+  
+  /**
+   * [이벤트] 엑셀 파일 선택 시 최초 진입점
+   * @description 파일을 읽어 시트 개수를 파악하고, 2개 이상일 경우 모달을 호출합니다.
+   */
   const handleExcelLayoutParse = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -61,159 +71,211 @@ const useDesignFileIO = ({
     
     reader.onload = (event) => {
       try {
-        const data           = new Uint8Array(event.target.result);
-        const workbook       = XLSX.read(data, { type: 'array' });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet      = workbook.Sheets[firstSheetName];
-
-        const matrix = XLSX.utils.sheet_to_json(worksheet, { 
-          header: 1, 
-          defval: '' 
-        });
+        const data     = new Uint8Array(event.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
         
-        if (matrix.length === 0) {
-          return showAlert("오류", "error", "빈 엑셀 파일입니다.");
+        if (workbook.SheetNames.length === 0) {
+          return showAlert("오류", "error", "시트가 존재하지 않는 파일입니다.");
         }
 
-        // 유효한 데이터가 있는 최대 행/열 인덱스 탐색
-        let maxR = -1;
-        let maxC = -1;
-        
-        for (let r = 0; r < matrix.length; r++) {
-          for (let c = 0; c < matrix[r].length; c++) {
-            if (matrix[r][c] !== undefined && matrix[r][c] !== null && String(matrix[r][c]).trim() !== '') {
-              if (r > maxR) maxR = r;
-              if (c > maxC) maxC = c;
-            }
-          }
+        // 시트가 2개 이상일 경우 모달을 띄워 사용자에게 선택 권한 위임
+        if (workbook.SheetNames.length > 1) {
+          excelWorkbookRef.current = workbook;   // 거대 객체를 Ref에 안전하게 보관
+          excelFileNameRef.current = file.name;  // 파일명 보관
+          
+          setExcelSheetNames(workbook.SheetNames);
+          setOpenExcelSheetDialog(true);
+        } else {
+          // 시트가 1개면 바로 파싱 진행
+          processExcelSheet(workbook, workbook.SheetNames[0], file.name);
         }
-
-        // 병합된 셀(Merges) 정보 확인하여 최대 행/열 범위 확장
-        const merges = worksheet['!merges'] || [];
-        merges.forEach((m) => {
-          if (m.s.r <= maxR && m.s.c <= maxC) {
-            if (m.e.r > maxR) maxR = m.e.r;
-            if (m.e.c > maxC) maxC = m.e.c;
-          }
-        });
-
-        if (maxR === -1 || maxC === -1) {
-          return showAlert("오류", "error", "텍스트가 있는 유효한 영역이 없습니다.");
-        }
-
-        const numRows   = maxR + 1;
-        const numCols   = maxC + 1;
-        const skipCells = new Set(); 
-        const newCells  = [];
-        
-        for (let r = 0; r < numRows; r++) {
-          for (let c = 0; c < numCols; c++) {
-            if (skipCells.has(`${r},${c}`)) continue;
-
-            let cellText = matrix[r][c] !== undefined && matrix[r][c] !== null ? String(matrix[r][c]).trim() : '';
-            let cellType = 'text';
-            let dataId   = '';
-            let rowSpan  = 1;
-            let colSpan  = 1;
-
-            // 병합된 셀인지 확인 및 Span 계산
-            const mergeInfo = merges.find(m => m.s.r === r && m.s.c === c);
-            if (mergeInfo) {
-              rowSpan = mergeInfo.e.r - mergeInfo.s.r + 1;
-              colSpan = mergeInfo.e.c - mergeInfo.s.c + 1;
-              
-              for(let i = r; i <= mergeInfo.e.r; i++) {
-                for(let j = c; j <= mergeInfo.e.c; j++) {
-                  if (i === r && j === c) continue;
-                  skipCells.add(`${i},${j}`);
-                }
-              }
-            }
-
-            // 가변 데이터 및 특수 바코드 문법 파싱 (#변수# 또는 [변수])
-            let dataMatch = cellText.match(/#([^#]+)#/);
-            if (!dataMatch) {
-               dataMatch = cellText.match(/\[([^\]]+)\]/);
-            }
-            
-            if (dataMatch) {
-              cellType = 'data';
-              dataId   = dataMatch[1] === 'DATA' ? '' : dataMatch[1]; 
-              cellText = '';         
-            } else if (cellText.includes('*BARCODE*')) {
-              cellType = 'barcode';
-              cellText = '';
-            } else if (cellText.includes('*QRCODE*')) {
-              cellType = 'qrcode';
-              cellText = '';
-            }
-
-            newCells.push({
-              row:                     r,
-              col:                     c,
-              rowSpan:                 rowSpan,
-              colSpan:                 colSpan,
-              cellType:                cellType,
-              content:                 cellText,
-              dataId:                  dataId,
-              prefix:                  '',
-              suffix:                  '',
-              barcodeType:             'CODE128',
-              qrErrorLevel:            'M',
-              displayValue:            true,
-              showPrefixSuffixOnLabel: true,
-              cellName:                '',
-              fontSize:                ''
-            });
-          }
-        }
-
-        // 여백을 고려한 표 기본 사이즈 계산
-        const maxW   = parseFloat(layout.labelW) || 100;
-        const maxH   = parseFloat(layout.labelH) || 50;
-        const margin = 2; 
-        const tableW = Math.max(10, maxW - (margin * 2));
-        const tableH = Math.max(10, maxH - (margin * 2));
-
-        const newTableItem = {
-          id:           `excel-table-${Date.now()}`,
-          type:         'table',
-          label:        `엑셀 연동 표`,
-          x:            margin,
-          y:            margin,
-          width:        tableW,
-          height:       tableH,
-          rotate:       0,
-          fontSize:     9, 
-          fontWeight:   'normal',
-          fontStyle:    'normal',
-          borderWidth:  0.5,
-          transparent:  true,
-          fill:         '#ffffff',
-          stroke:       '#000000',
-          visible:      true,
-          useSnap:      true,
-          showBorder:   true,
-          rows:         numRows,
-          cols:         numCols,
-          rowRatios:    Array(numRows).fill(100 / numRows), 
-          colRatios:    Array(numCols).fill(100 / numCols),
-          cells:        newCells
-        };
-
-        // 기존 내용을 덮어씌우고 새 표 삽입
-        initItems([newTableItem]); 
-        setTemplateName(file.name.replace(/\.[^/.]+$/, "")); // 확장자 제거
-        
-        showAlert("파싱 완료", "success", "엑셀의 데이터 영역만 추출하여 표를 생성했습니다.");
 
       } catch (error) {
-        showAlert("오류", "error", "엑셀 파싱 중 오류가 발생했습니다. (.xlsx 권장)");
+        showAlert("오류", "error", "엑셀 파일을 읽는 중 오류가 발생했습니다.");
       }
     };
     
     reader.readAsArrayBuffer(file); 
     excelLayoutInputRef.current.value = null; 
+  };
+
+  /**
+   * [로직] 선택된 단일 시트를 기반으로 Table 개체 생성
+   * @param {Object} workbook - 파싱된 XLSX 워크북 객체
+   * @param {String} sheetName - 데이터를 추출할 타겟 시트명
+   * @param {String} fileName - 원본 파일명 (템플릿 이름 지정용)
+   */
+  const processExcelSheet = (workbook, sheetName, fileName) => {
+    try {
+      if (!workbook) {
+        setOpenExcelSheetDialog(false);
+        return showAlert("오류", "error", "엑셀 데이터가 유실되었습니다. 다시 시도해주세요.");
+      }
+
+      const worksheet = workbook.Sheets[sheetName];
+      
+      // ★ 핵심 수정: 엑셀 날짜 일련번호 변환 방지 및 화면 표시 텍스트 추출 옵션 적용
+      const matrix = XLSX.utils.sheet_to_json(worksheet, { 
+        header: 1, 
+        defval: '',
+        raw:    false, 
+        dateNF: 'yyyy-mm-dd'
+      });
+      
+      if (matrix.length === 0) {
+        setOpenExcelSheetDialog(false);
+        return showAlert("오류", "error", "빈 엑셀 시트입니다.");
+      }
+
+      // 유효한 데이터가 있는 최대 행/열 인덱스 탐색
+      let maxR = -1;
+      let maxC = -1;
+      
+      for (let r = 0; r < matrix.length; r++) {
+        for (let c = 0; c < matrix[r].length; c++) {
+          if (matrix[r][c] !== undefined && matrix[r][c] !== null && String(matrix[r][c]).trim() !== '') {
+            if (r > maxR) maxR = r;
+            if (c > maxC) maxC = c;
+          }
+        }
+      }
+
+      // 병합된 셀(Merges) 정보 확인하여 최대 행/열 범위 확장
+      const merges = worksheet['!merges'] || [];
+      merges.forEach((m) => {
+        if (m.s.r <= maxR && m.s.c <= maxC) {
+          if (m.e.r > maxR) maxR = m.e.r;
+          if (m.e.c > maxC) maxC = m.e.c;
+        }
+      });
+
+      if (maxR === -1 || maxC === -1) {
+        setOpenExcelSheetDialog(false);
+        return showAlert("오류", "error", "텍스트가 있는 유효한 영역이 없습니다.");
+      }
+
+      const numRows   = maxR + 1;
+      const numCols   = maxC + 1;
+      const skipCells = new Set(); 
+      const newCells  = [];
+      
+      for (let r = 0; r < numRows; r++) {
+        for (let c = 0; c < numCols; c++) {
+          if (skipCells.has(`${r},${c}`)) continue;
+
+          let cellText = matrix[r][c] !== undefined && matrix[r][c] !== null ? String(matrix[r][c]).trim() : '';
+          let cellType = 'text';
+          let dataId   = '';
+          let rowSpan  = 1;
+          let colSpan  = 1;
+
+          // 병합된 셀인지 확인 및 Span 계산
+          const mergeInfo = merges.find(m => m.s.r === r && m.s.c === c);
+          if (mergeInfo) {
+            rowSpan = mergeInfo.e.r - mergeInfo.s.r + 1;
+            colSpan = mergeInfo.e.c - mergeInfo.s.c + 1;
+            
+            for(let i = r; i <= mergeInfo.e.r; i++) {
+              for(let j = c; j <= mergeInfo.e.c; j++) {
+                if (i === r && j === c) continue;
+                skipCells.add(`${i},${j}`);
+              }
+            }
+          }
+
+          // 가변 데이터 및 특수 바코드 문법 파싱 (#변수# 또는 [변수])
+          let dataMatch = cellText.match(/#([^#]+)#/);
+          if (!dataMatch) {
+             dataMatch = cellText.match(/\[([^\]]+)\]/);
+          }
+          
+          if (dataMatch) {
+            cellType = 'data';
+            dataId   = dataMatch[1] === 'DATA' ? '' : dataMatch[1]; 
+            cellText = '';        
+          } else if (cellText.includes('*BARCODE*')) {
+            cellType = 'barcode';
+            cellText = '';
+          } else if (cellText.includes('*QRCODE*')) {
+            cellType = 'qrcode';
+            cellText = '';
+          }
+
+          newCells.push({
+            row:                     r,
+            col:                     c,
+            rowSpan:                 rowSpan,
+            colSpan:                 colSpan,
+            cellType:                cellType,
+            content:                 cellText,
+            dataId:                  dataId,
+            prefix:                  '',
+            suffix:                  '',
+            barcodeType:             'CODE128',
+            qrErrorLevel:            'M',
+            displayValue:            true,
+            showPrefixSuffixOnLabel: true,
+            useInCode:               true,
+            cellName:                '',
+            fontSize:                '',
+            borderTop:               true,
+            borderBottom:            true,
+            borderLeft:              true,
+            borderRight:             true
+          });
+        }
+      }
+
+      // 여백을 고려한 표 기본 사이즈 계산
+      const maxW   = parseFloat(layout.labelW) || 100;
+      const maxH   = parseFloat(layout.labelH) || 50;
+      const margin = 2; 
+      const tableW = Math.max(10, maxW - (margin * 2));
+      const tableH = Math.max(10, maxH - (margin * 2));
+
+      const newTableItem = {
+        id:          `excel-table-${Date.now()}`,
+        type:        'table',
+        label:       `엑셀 연동 표`,
+        x:           margin,
+        y:           margin,
+        width:       tableW,
+        height:      tableH,
+        rotate:      0,
+        fontSize:    9, 
+        fontWeight:  'normal',
+        fontStyle:   'normal',
+        borderWidth: 0.5,
+        transparent: true,
+        fill:        '#ffffff',
+        stroke:      '#000000',
+        visible:     true,
+        useSnap:     true,
+        showBorder:  true,
+        rows:        numRows,
+        cols:        numCols,
+        rowRatios:   Array(numRows).fill(100 / numRows), 
+        colRatios:   Array(numCols).fill(100 / numCols),
+        cells:       newCells
+      };
+
+      // 기존 내용을 덮어씌우고 새 표 삽입
+      initItems([newTableItem]); 
+      setTemplateName(fileName.replace(/\.[^/.]+$/, "")); // 확장자 제거
+      
+      // 모달 닫기 및 Ref 초기화
+      setOpenExcelSheetDialog(false);
+      excelWorkbookRef.current = null;
+      excelFileNameRef.current = '';
+      
+      showAlert("파싱 완료", "success", `[${sheetName}] 시트 파싱이 완료되었습니다.`);
+
+    } catch (error) {
+      setOpenExcelSheetDialog(false);
+      excelWorkbookRef.current = null;
+      excelFileNameRef.current = '';
+      showAlert("오류", "error", "시트 데이터를 분석하는 중 오류가 발생했습니다.");
+    }
   };
 
   // -------------------------------------------------------------------------
@@ -446,7 +508,13 @@ const useDesignFileIO = ({
     handleImageUpload,
     handleFetchDbList, 
     requestSave, 
-    handleDeleteTemplate
+    handleDeleteTemplate,
+    
+    // 멀티 시트 모달 제어용 상태 및 핸들러 반환
+    openExcelSheetDialog,
+    setOpenExcelSheetDialog,
+    excelSheetNames,
+    onSelectExcelSheet:      (sheetName) => processExcelSheet(excelWorkbookRef.current, sheetName, excelFileNameRef.current)
   };
 };
 

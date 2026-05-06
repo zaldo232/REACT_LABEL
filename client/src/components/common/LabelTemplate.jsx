@@ -1,23 +1,18 @@
 /**
  * @file        LabelTemplate.jsx
  * @description 라벨 인쇄 및 미리보기용 공통 템플릿 컴포넌트
- * - [기능추가] 표(Table) 내부 개별 셀 폰트 크기 독립 적용 로직 추가
- * - [기능추가] 엑셀처럼 행/열을 개별적으로 리사이즈했을 때 저장된 동적 너비/높이 비율(rowRatios, colRatios) 완벽 렌더링 반영
- * - [기능추가] 표 개별 셀 데이터 가시성(Show/Hide)에 따른 렌더링 스킵 로직 적용
- * - [버그수정] 표(Table) 셀 병합(Span) 시 뒷면에 가려지는 유령 셀 필터링(숨김) 및 데이터 취합 무시 로직 적용
- * - [렌더링동기화] 디자인 페이지의 최신 렌더링 방식(SVG 중앙 선두께, 표 선 겹침 방지, 0.1mm 지원) 이식
- * - [버그수정] 데이터가 비어있을 때("") 구분자가 결합되어 띄어쓰기가 생기던 오류 수정 (빈 값 필터링)
- * - [버그수정] 편집기에서 설정한 개별 셀 테두리(상/하/좌/우) On/Off 상태가 인쇄/미리보기에 반영되도록 통짜 <rect> 렌더링을 4개의 <line>으로 전면 교체
  */
 
 import React, { 
   forwardRef, 
   useMemo 
 } from 'react';
+
 import { 
   Box, 
   Typography 
 } from '@mui/material';
+
 import Barcode from 'react-barcode';
 import QRCode from 'react-qr-code';
 
@@ -34,8 +29,6 @@ const PRINT_COLORS = {
 
 /**
  * 표 병합 시 가려진 셀을 찾아내는 헬퍼 함수
- * @param {Object} item - 표(Table) 객체 데이터
- * @returns {Set} 가려진 셀의 고유 ID(row_col) 집합
  */
 const getHiddenCells = (item) => {
   const hidden = new Set();
@@ -45,7 +38,6 @@ const getHiddenCells = (item) => {
       if ((c.rowSpan || 1) > 1 || (c.colSpan || 1) > 1) {
         for (let r = 0; r < (c.rowSpan || 1); r++) {
           for (let col = 0; col < (c.colSpan || 1); col++) {
-            // 기준 셀(0,0)은 유지하고, 확장된 영역만 숨김 처리
             if (r === 0 && col === 0) continue;
             hidden.add(`${c.row + r}_${c.col + col}`);
           }
@@ -73,14 +65,11 @@ const LabelTemplate = forwardRef(({
   // 로직 영역: 날짜 포맷팅 및 가변 데이터 처리
   // =========================================================================
 
-  /**
-   * KST(한국 표준시) 기준으로 현재 시간을 지정된 포맷으로 반환
-   */
+  // ★ 이 함수는 오직 툴바에서 꺼낸 '날짜' 개체의 "시스템 현재(오늘) 날짜"를 인쇄하는 용도입니다. 엑셀 데이터는 이 코드를 거치지 않습니다.
   const getKstFormattedDate = (format) => {
     if (!format) return '';
     
     const now     = new Date();
-    // UTC 기준 시간에 9시간을 더하여 KST(한국 표준시)로 변환
     const kstDate = new Date(now.getTime() + (9 * 60 * 60 * 1000));
     const pad     = (n) => String(n).padStart(2, '0');
     
@@ -95,16 +84,15 @@ const LabelTemplate = forwardRef(({
 
   /**
    * 바코드/QR코드에 주입될 가변 데이터 및 정적 데이터 결합 로직
-   * - 빈 값("")인 경우 구분자가 불필요하게 결합되는 현상 방지
-   * - 병합되어 화면에 보이지 않는 유령 셀은 데이터 결합에서 철저히 제외
+   * - 빈 값("")인 경우 구분자가 결합되는 현상 방지
+   * - 병합되어 가려진 유령 셀 데이터 취합 무시
    */
   const codeDataWithPrefix = useMemo(() => {
     const parts = [];
     let hasAnyContent = false;
     
     items.forEach((item) => {
-      // 1. 일반 데이터 및 날짜 개체 처리
-      if (item.type === 'data' || item.type === 'date') {
+      if ((item.type === 'data' || item.type === 'date') && item.useInCode !== false) {
         let val = item.type === 'date' 
           ? getKstFormattedDate(item.content).replace(/[-_:\s]/g, '') 
           : (dynamicData[item.id] || '');
@@ -112,15 +100,13 @@ const LabelTemplate = forwardRef(({
         if (val !== '') hasAnyContent = true;
         parts.push(`${item.prefix || ''}${val}${item.suffix || ''}`);
       } 
-      // 2. 표(Table) 내부 셀 데이터 처리
       else if (item.type === 'table' && item.cells) {
         const hiddenCells = getHiddenCells(item); 
         
         item.cells.forEach((cell) => {
-          // 가려진 셀은 데이터 취합에서 무시
           if (hiddenCells.has(`${cell.row}_${cell.col}`)) return; 
 
-          if (cell.cellType === 'data' || cell.cellType === 'date') {
+          if ((cell.cellType === 'data' || cell.cellType === 'date') && cell.useInCode !== false) {
             let val = '';
             
             if (cell.cellType === 'date') {
@@ -138,7 +124,7 @@ const LabelTemplate = forwardRef(({
 
     if (!hasAnyContent) return '';
     
-    // 3. 후행 빈칸 트리밍 (무의미한 빈 문자열 및 구분자 결합 방지)
+    // 후행 빈칸 트리밍
     let lastNonEmpty = -1;
     for (let idx = parts.length - 1; idx >= 0; idx--) {
       if (parts[idx] !== '') {
@@ -171,7 +157,6 @@ const LabelTemplate = forwardRef(({
         overflow:        'hidden'
       }}
     >
-      {/* 레이어 역순(Z-Index) 매핑 렌더링 */}
       {[...items].sort((a, b) => 0).reverse().map((item, index) => {
         if (item.visible === false) return null;
 
@@ -179,7 +164,6 @@ const LabelTemplate = forwardRef(({
         const isTextType   = ['text', 'data', 'date'].includes(item.type);
         let displayContent = item.content;
         
-        // 텍스트 속성 데이터 바인딩
         if (item.type === 'data') {
           displayContent = dynamicData[item.id] || ''; 
         } else if (item.type === 'date') {
@@ -188,7 +172,6 @@ const LabelTemplate = forwardRef(({
 
         const hiddenCells = getHiddenCells(item);
 
-        // ★ 가변 행/열 비율 추출 로직
         const colRatios = item.colRatios || Array(item.cols).fill(100 / (item.cols || 1));
         const rowRatios = item.rowRatios || Array(item.rows).fill(100 / (item.rows || 1));
 
@@ -211,8 +194,9 @@ const LabelTemplate = forwardRef(({
               style={{ 
                 transform:       `rotate(${parseFloat(item.rotate) || 0}deg)`, 
                 transformOrigin: 'center center', 
-                width:           isTextType ? 'max-content' : `${parseFloat(item.width) || 0}mm`, 
-                height:          isTextType ? 'max-content' : `${parseFloat(item.height) || 0}mm`, 
+                // ★ 핵심 수정: 텍스트 개체에 강제로 박혀있던 max-content를 걷어내고 사용자가 직접 조절한 Width 크기를 존중합니다.
+                width:           `${parseFloat(item.width) || 0}mm`, 
+                height:          `${parseFloat(item.height) || 0}mm`, 
                 minHeight:       item.type === 'line' ? '1px' : undefined,
                 position:        'relative' 
               }}
@@ -223,15 +207,24 @@ const LabelTemplate = forwardRef(({
                 const pfx = item.showPrefixSuffixOnLabel !== false ? (item.prefix || '') : '';
                 const sfx = item.showPrefixSuffixOnLabel !== false ? (item.suffix || '') : '';
                 
+                // 속성창에서 받아온 textAlign 상태를 컨테이너(Box)의 정렬 속성(flex)으로 변환
+                const alignMap = {
+                  'left':   'flex-start',
+                  'center': 'center',
+                  'right':  'flex-end'
+                };
+                const justifyContentStr = alignMap[item.textAlign || 'left'];
+
                 return (
                   <Box 
                     sx={{
-                      width:          'max-content',
-                      height:         'max-content',
+                      width:          '100%',
+                      height:         '100%',
                       display:        'flex',
-                      alignItems:     'flex-start',
-                      justifyContent: 'flex-start',
-                      overflow:       'hidden'
+                      alignItems:     'center', // 세로도 기본적으로 중앙 정렬
+                      // ★ 핵심 수정: 하드코딩된 flex-start를 없애고 속성값(center/right 등)을 완벽히 반영하여 정해진 크기 박스 내에서 퍼짐 제어
+                      justifyContent: justifyContentStr,
+                      overflow:       'visible' 
                     }}
                   >
                     <Typography 
@@ -241,7 +234,9 @@ const LabelTemplate = forwardRef(({
                         fontStyle:  item.fontStyle || 'normal',
                         color:      PRINT_COLORS.foreground, 
                         whiteSpace: 'nowrap',
-                        lineHeight: 1
+                        lineHeight: 1,
+                        // 텍스트 자체의 정렬 속성도 동기화
+                        textAlign:  item.textAlign || 'left'
                       }}
                     >
                       {item.type === 'text' 
@@ -252,7 +247,7 @@ const LabelTemplate = forwardRef(({
                 );
               })()}
 
-              {/* --- 2. 기본 도형 개체 (SVG 렌더링 동기화) --- */}
+              {/* --- 2. 기본 도형 개체 --- */}
               {item.type === 'rect' && (() => {
                  const bw = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
                  
@@ -303,7 +298,6 @@ const LabelTemplate = forwardRef(({
                  );
               })()}
 
-              {/* --- 선(Line) SVG 동기화 --- */}
               {item.type === 'line' && (() => {
                  const thk = item.height !== undefined && item.height !== '' ? parseFloat(item.height) : 0.5;
                  
@@ -376,7 +370,7 @@ const LabelTemplate = forwardRef(({
                   }}
                 >
                   <Barcode 
-                    value={codeDataWithPrefix || 'NO DATA'} 
+                    value={dynamicData[item.id] || codeDataWithPrefix || 'NO DATA'} 
                     format={item.barcodeType || 'CODE128'}
                     width={2} 
                     height={100} 
@@ -401,7 +395,7 @@ const LabelTemplate = forwardRef(({
                   }}
                 >
                   <QRCode 
-                    value={codeDataWithPrefix || 'NO DATA'} 
+                    value={dynamicData[item.id] || codeDataWithPrefix || 'NO DATA'} 
                     level={item.qrErrorLevel || 'M'}
                     size={256} 
                     bgColor={PRINT_COLORS.background}
@@ -416,7 +410,7 @@ const LabelTemplate = forwardRef(({
                 </Box>
               )}
 
-              {/* --- 6. 표(Table) 복합 개체 (정밀 SVG 오버레이) --- */}
+              {/* --- 6. 표(Table) 복합 개체 --- */}
               {item.type === 'table' && (() => {
                 const bw          = item.borderWidth !== undefined && item.borderWidth !== '' ? parseFloat(item.borderWidth) : 0.5;
                 const strokeColor = item.stroke || PRINT_COLORS.foreground;
@@ -430,7 +424,6 @@ const LabelTemplate = forwardRef(({
                       position: 'relative',
                     }}
                   >
-                    {/* 표 배경색 적용 */}
                     <Box 
                       sx={{ 
                         width:           '100%', 
@@ -442,7 +435,6 @@ const LabelTemplate = forwardRef(({
                       }} 
                     />
 
-                    {/* ★ 버그 수정: 통짜 rect 대신 엑셀처럼 속성값(borderTop 등)에 따라 개별적으로 렌더링되도록 4개의 line으로 교체 */}
                     {showBorders && (
                       <svg 
                         width="100%" 
@@ -469,44 +461,16 @@ const LabelTemplate = forwardRef(({
                           return (
                             <g key={idx}>
                               {cell.borderTop !== false && (
-                                <line 
-                                  x1={`${x1}%`} 
-                                  y1={`${y1}%`} 
-                                  x2={`${x2}%`} 
-                                  y2={`${y1}%`} 
-                                  stroke={strokeColor} 
-                                  strokeWidth={`${bw}mm`} 
-                                />
+                                <line x1={`${x1}%`} y1={`${y1}%`} x2={`${x2}%`} y2={`${y1}%`} stroke={strokeColor} strokeWidth={`${bw}mm`} />
                               )}
                               {cell.borderRight !== false && (
-                                <line 
-                                  x1={`${x2}%`} 
-                                  y1={`${y1}%`} 
-                                  x2={`${x2}%`} 
-                                  y2={`${y2}%`} 
-                                  stroke={strokeColor} 
-                                  strokeWidth={`${bw}mm`} 
-                                />
+                                <line x1={`${x2}%`} y1={`${y1}%`} x2={`${x2}%`} y2={`${y2}%`} stroke={strokeColor} strokeWidth={`${bw}mm`} />
                               )}
                               {cell.borderBottom !== false && (
-                                <line 
-                                  x1={`${x1}%`} 
-                                  y1={`${y2}%`} 
-                                  x2={`${x2}%`} 
-                                  y2={`${y2}%`} 
-                                  stroke={strokeColor} 
-                                  strokeWidth={`${bw}mm`} 
-                                />
+                                <line x1={`${x1}%`} y1={`${y2}%`} x2={`${x2}%`} y2={`${y2}%`} stroke={strokeColor} strokeWidth={`${bw}mm`} />
                               )}
                               {cell.borderLeft !== false && (
-                                <line 
-                                  x1={`${x1}%`} 
-                                  y1={`${y1}%`} 
-                                  x2={`${x1}%`} 
-                                  y2={`${y2}%`} 
-                                  stroke={strokeColor} 
-                                  strokeWidth={`${bw}mm`} 
-                                />
+                                <line x1={`${x1}%`} y1={`${y1}%`} x2={`${x1}%`} y2={`${y2}%`} stroke={strokeColor} strokeWidth={`${bw}mm`} />
                               )}
                             </g>
                           );
@@ -514,7 +478,6 @@ const LabelTemplate = forwardRef(({
                       </svg>
                     )}
 
-                    {/* 내부 셀 데이터 렌더링 (가변 비율 Grid 적용) */}
                     <Box 
                       sx={{ 
                         width:               '100%', 
@@ -531,9 +494,13 @@ const LabelTemplate = forwardRef(({
                         if (hiddenCells.has(`${cell.row}_${cell.col}`)) return null;
 
                         let cellDisplay = cell.content || '';
+                        const cellIdKey = `${item.id}_${cell.row}_${cell.col}`;
+                        
                         if (cell.cellType === 'data') {
-                          cellDisplay = dynamicData[`${item.id}_${cell.row}_${cell.col}`] || '';
+                          cellDisplay = dynamicData[cellIdKey] || '';
                         } else if (cell.cellType === 'date') {
+                          // 엑셀에서 가져오는 포장일자가 여기에 들어간다면 cell.cellType은 보통 'data'입니다.
+                          // cell.cellType이 'date'인 경우는 사용자가 직접 '라벨 인쇄 시점의 날짜'를 찍기 위해 추가한 개체입니다.
                           cellDisplay = getKstFormattedDate(cell.content || 'YYYY-MM-DD');
                         }
 
@@ -546,14 +513,14 @@ const LabelTemplate = forwardRef(({
                           <Box 
                             key={idx} 
                             sx={{
-                              gridRow:         `${cell.row + 1} / span ${cell.rowSpan || 1}`,
-                              gridColumn:      `${cell.col + 1} / span ${cell.colSpan || 1}`,
-                              boxSizing:       'border-box',
-                              display:         'flex',
-                              alignItems:      'center',
-                              justifyContent:  'center',
-                              overflow:        'hidden',
-                              padding:         '2px',
+                              gridRow:        `${cell.row + 1} / span ${cell.rowSpan || 1}`,
+                              gridColumn:     `${cell.col + 1} / span ${cell.colSpan || 1}`,
+                              boxSizing:      'border-box',
+                              display:        'flex',
+                              alignItems:     'center',
+                              justifyContent: 'center',
+                              overflow:       'hidden',
+                              padding:        '2px',
                             }}
                           >
                             {isCellVisible && (
@@ -580,7 +547,7 @@ const LabelTemplate = forwardRef(({
                                   }}
                                 >
                                    <Barcode 
-                                     value={codeDataWithPrefix || 'BARCODE'} 
+                                     value={dynamicData[cellIdKey] || codeDataWithPrefix || 'BARCODE'} 
                                      format={cell.barcodeType || 'CODE128'} 
                                      width={2} 
                                      height={35} 
@@ -603,7 +570,7 @@ const LabelTemplate = forwardRef(({
                                   }}
                                 >
                                   <QRCode 
-                                    value={codeDataWithPrefix || 'QRCODE'} 
+                                    value={dynamicData[cellIdKey] || codeDataWithPrefix || 'QRCODE'} 
                                     level={cell.qrErrorLevel || 'M'} 
                                     size={256} 
                                     bgColor={PRINT_COLORS.background} 

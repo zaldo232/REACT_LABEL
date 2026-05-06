@@ -1,7 +1,6 @@
 /**
  * @file        DesignToolbar.jsx
  * @description 라벨 디자인 페이지의 좌측 도구 모음(툴바) 컴포넌트
- * - [포맷팅] 프로젝트 규칙에 따른 수직 정렬 및 블록 주석 적용 완료
  */
 
 import React from 'react';

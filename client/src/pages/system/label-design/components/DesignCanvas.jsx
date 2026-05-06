@@ -1,8 +1,6 @@
 /**
  * @file        DesignCanvas.jsx
  * @description 라벨 디자인 페이지의 중앙 작업 영역 (도화지 및 눈금자) 컴포넌트
- * - [버그수정] 이전 버전 덮어쓰기로 유실되었던 '표 내부 셀 개별 테두리(Line) 렌더링 로직' 완벽 복구
- * - [포맷팅] 프로젝트 규칙에 따라 모든 JSX 속성, 객체, 이벤트 핸들러 내부 로직의 줄바꿈 및 수직 정렬 완벽 적용
  */
 
 import React, { createRef } from 'react';
@@ -301,8 +299,8 @@ const DesignCanvas = ({
                           transform:       `rotate(${parseFloat(item.rotate) || 0}deg)`, 
                           transformOrigin: 'center center', 
                           border:          isSel ? '1px dashed rgba(25, 118, 210, 0.5)' : '1px dashed transparent', 
-                          width:           isTextType ? 'max-content' : `${parseFloat(item.width) || 0}mm`, 
-                          height:          isTextType ? 'max-content' : `${parseFloat(item.height) || 0}mm`, 
+                          width:           `${parseFloat(item.width) || 0}mm`, 
+                          height:          `${parseFloat(item.height) || 0}mm`, 
                           minHeight:       item.type === 'line' ? '1px' : undefined,
                           position:        'relative',
                           boxSizing:       'content-box'
@@ -313,14 +311,22 @@ const DesignCanvas = ({
                           const pfx = item.showPrefixSuffixOnLabel !== false ? (item.prefix || '') : '';
                           const sfx = item.showPrefixSuffixOnLabel !== false ? (item.suffix || '') : '';
                           
+                          const alignMap = {
+                            'left':   'flex-start',
+                            'center': 'center',
+                            'right':  'flex-end'
+                          };
+                          const justifyContentStr = alignMap[item.textAlign || 'left'];
+
                           return (
                             <Box 
                               sx={{ 
-                                width:          'max-content', 
-                                height:         'max-content', 
+                                width:          '100%', 
+                                height:         '100%', 
                                 display:        'flex', 
-                                alignItems:     'flex-start', 
-                                justifyContent: 'flex-start' 
+                                alignItems:     'center',
+                                justifyContent: justifyContentStr,
+                                overflow:       'visible' 
                               }}
                             >
                               <Typography 
@@ -330,7 +336,8 @@ const DesignCanvas = ({
                                   lineHeight: 1, 
                                   color:      item.type === 'data' ? '#1976d2' : '#000', 
                                   fontWeight: item.fontWeight, 
-                                  fontStyle:  item.fontStyle || 'normal' 
+                                  fontStyle:  item.fontStyle || 'normal',
+                                  textAlign:  item.textAlign || 'left'
                                 }}
                               >
                                 {item.type === 'date' 
@@ -560,7 +567,6 @@ const DesignCanvas = ({
                                 </>
                               )}
 
-                              {/* ★ 복구 완료: 엑셀 표와 같이 4면의 테두리를 각각 그리는 기능 적용 */}
                               {showBorders && (
                                 <svg 
                                   width="100%" 
@@ -587,44 +593,16 @@ const DesignCanvas = ({
                                     return (
                                       <g key={idx}>
                                         {cell.borderTop !== false && (
-                                          <line 
-                                            x1={`${x1}%`} 
-                                            y1={`${y1}%`} 
-                                            x2={`${x2}%`} 
-                                            y2={`${y1}%`} 
-                                            stroke={strokeColor} 
-                                            strokeWidth={`${bw}mm`} 
-                                          />
+                                          <line x1={`${x1}%`} y1={`${y1}%`} x2={`${x2}%`} y2={`${y1}%`} stroke={strokeColor} strokeWidth={`${bw}mm`} />
                                         )}
                                         {cell.borderRight !== false && (
-                                          <line 
-                                            x1={`${x2}%`} 
-                                            y1={`${y1}%`} 
-                                            x2={`${x2}%`} 
-                                            y2={`${y2}%`} 
-                                            stroke={strokeColor} 
-                                            strokeWidth={`${bw}mm`} 
-                                          />
+                                          <line x1={`${x2}%`} y1={`${y1}%`} x2={`${x2}%`} y2={`${y2}%`} stroke={strokeColor} strokeWidth={`${bw}mm`} />
                                         )}
                                         {cell.borderBottom !== false && (
-                                          <line 
-                                            x1={`${x1}%`} 
-                                            y1={`${y2}%`} 
-                                            x2={`${x2}%`} 
-                                            y2={`${y2}%`} 
-                                            stroke={strokeColor} 
-                                            strokeWidth={`${bw}mm`} 
-                                          />
+                                          <line x1={`${x1}%`} y1={`${y2}%`} x2={`${x2}%`} y2={`${y2}%`} stroke={strokeColor} strokeWidth={`${bw}mm`} />
                                         )}
                                         {cell.borderLeft !== false && (
-                                          <line 
-                                            x1={`${x1}%`} 
-                                            y1={`${y1}%`} 
-                                            x2={`${x1}%`} 
-                                            y2={`${y2}%`} 
-                                            stroke={strokeColor} 
-                                            strokeWidth={`${bw}mm`} 
-                                          />
+                                          <line x1={`${x1}%`} y1={`${y1}%`} x2={`${x1}%`} y2={`${y2}%`} stroke={strokeColor} strokeWidth={`${bw}mm`} />
                                         )}
                                       </g>
                                     );
@@ -805,7 +783,8 @@ const DesignCanvas = ({
                           );
                         })()}
                         
-                        {isSel && selectedIds.length === 1 && !isTextType && (
+                        {/* 핵심 수정: 텍스트 개체도 크기 조절(Resize) 핸들을 활성화 */}
+                        {isSel && selectedIds.length === 1 && (
                           <Box 
                             data-resizer="true"
                             onMouseDown={(e) => { 

@@ -1,6 +1,6 @@
 /**
  * @file        LabelDesignPage.jsx
- * @description 전문 디자인 툴 방식의 라벨 편집기 페이지
+ * @description 라벨 편집기 페이지
  */
 
 import React, { 

@@ -1,11 +1,6 @@
 /**
  * @file        LabelPrintPage.jsx
  * @description 라벨 발행 관리 및 인쇄 시스템 페이지
- * - [버그수정] 다크모드 전환 시 텍스트 박스들에 남아있던 강제 하얀 배경(하드코딩) 완벽 제거 및 테마 연동
- * - [버그수정] 표(Table) 병합(Merge) 시 가려진 유령 셀에 대한 '데이터 입력 필드(TextField)'가 좌측 패널에 계속 생성되던 치명적 버그 완벽 해결 (UI 렌더링 필터링 적용)
- * - [버그수정] 일괄 데이터 입력창(마스터 필드)에 날짜(Date) 객체 데이터가 잘못 취합되어 1번 가변 데이터 필드로 밀려 들어가던 치명적 버그 완벽 해결
- * - [버그수정] 일괄 데이터 입력창(마스터 필드) 타이핑 시 스페이스바 튕김 및 글자 밀림 현상 완벽 해결 (포커스 디커플링 상태 연결)
- * - [기능유지] 양방향 데이터 일괄 입력, 엑셀 컬럼 자동 매핑, 대량 인쇄, 사용자 프리셋 저장 및 호출 완벽 지원
  */
 
 import React, { 
@@ -15,6 +10,7 @@ import React, {
   useMemo,
   useEffect
 } from 'react';
+
 import { 
   Box, 
   Button, 
@@ -35,12 +31,14 @@ import {
   ListItem, 
   ListItemButton, 
   ListItemText,
+  ListItemIcon,
   Slider,
   Select,
   MenuItem,
   FormControl,
   InputLabel
 } from '@mui/material';
+
 import PrintIcon from '@mui/icons-material/Print';
 import LabelIcon from '@mui/icons-material/Label';
 import CloseIcon from '@mui/icons-material/Close';
@@ -50,6 +48,8 @@ import FileUploadIcon from '@mui/icons-material/FileUpload';
 import SaveIcon from '@mui/icons-material/Save';
 import BookmarkAddedIcon from '@mui/icons-material/BookmarkAdded';
 import ViewListIcon from '@mui/icons-material/ViewList'; 
+import TableViewIcon from '@mui/icons-material/TableView';
+
 import { useReactToPrint } from 'react-to-print';
 import Swal from 'sweetalert2'; 
 import * as XLSX from 'xlsx';   
@@ -64,10 +64,6 @@ import {
 // 공통 유틸리티 헬퍼 함수
 // =========================================================================
 
-/**
- * 표(Table) 병합(RowSpan/ColSpan)으로 인해 화면과 데이터에서 
- * 가려져야 할 유령 셀들의 ID(row_col)를 Set으로 반환합니다.
- */
 const getHiddenCells = (item) => {
   const hidden = new Set();
   if (item.type === 'table' && item.cells) {
@@ -75,7 +71,6 @@ const getHiddenCells = (item) => {
       if ((c.rowSpan || 1) > 1 || (c.colSpan || 1) > 1) {
         for (let r = 0; r < (c.rowSpan || 1); r++) {
           for (let col = 0; col < (c.colSpan || 1); col++) {
-            // 기준이 되는 본체 셀(0,0)은 숨기지 않고 나머지 병합 영역만 숨김 처리
             if (r === 0 && col === 0) continue;
             hidden.add(`${c.row + r}_${c.col + col}`);
           }
@@ -90,19 +85,19 @@ const LabelPrintPage = () => {
   // =========================================================================
   // 상태 관리 (State Management)
   // =========================================================================
-  const [templateId, setTemplateId] = useState(null);               
-  const [templateName, setTemplateName] = useState('선택된 양식 없음'); 
-  const [templateItems, setTemplateItems] = useState([]);           
+  const [templateId, setTemplateId]                     = useState(null);               
+  const [templateName, setTemplateName]                 = useState('선택된 양식 없음'); 
+  const [templateItems, setTemplateItems]               = useState([]);           
   
-  const [presetId, setPresetId] = useState(null);                   
-  const [presetName, setPresetName] = useState('');                 
-  const [dynamicData, setDynamicData] = useState({}); 
-  const [copyCount, setCopyCount] = useState(1);                    
-  const [printCopyCount, setPrintCopyCount] = useState(0);          
+  const [presetId, setPresetId]                         = useState(null);                   
+  const [presetName, setPresetName]                     = useState('');                 
+  const [dynamicData, setDynamicData]                   = useState({}); 
+  const [copyCount, setCopyCount]                       = useState(1);                    
+  const [printCopyCount, setPrintCopyCount]             = useState(0);          
 
-  const [excelDataList, setExcelDataList] = useState([]);   
-  const [mappedDataList, setMappedDataList] = useState([]); 
-  const [excelColumns, setExcelColumns] = useState([]);     
+  const [excelDataList, setExcelDataList]               = useState([]);   
+  const [mappedDataList, setMappedDataList]             = useState([]); 
+  const [excelColumns, setExcelColumns]                 = useState([]);     
 
   const [layout, setLayout] = useState({
     labelW:       '100',     
@@ -116,34 +111,35 @@ const LabelPrintPage = () => {
     excelMapping: {} 
   });
 
-  const [previewMode, setPreviewMode] = useState('label');          
-  const [zoom, setZoom] = useState(1.5); 
-  const [isPreparing, setIsPreparing] = useState(false);            
-  const [isPrinting, setIsPrinting] = useState(false); 
+  const [previewMode, setPreviewMode]                   = useState('label');          
+  const [zoom, setZoom]                                 = useState(1.5); 
+  const [isPreparing, setIsPreparing]                   = useState(false);          
+  const [isPrinting, setIsPrinting]                     = useState(false); 
   
-  const [openDbDialog, setOpenDbDialog] = useState(false);          
+  const [openDbDialog, setOpenDbDialog]                 = useState(false);          
   const [openPresetListDialog, setOpenPresetListDialog] = useState(false); 
   const [savePresetDialogOpen, setSavePresetDialogOpen] = useState(false); 
-  const [openMappingDialog, setOpenMappingDialog] = useState(false); 
+  const [openMappingDialog, setOpenMappingDialog]       = useState(false); 
   
-  const [dbList, setDbList] = useState([]);                         
-  const [presetList, setPresetList] = useState([]);                 
-  const [presetNameInput, setPresetNameInput] = useState('');       
+  const [dbList, setDbList]                             = useState([]);                         
+  const [presetList, setPresetList]                     = useState([]);                 
+  const [presetNameInput, setPresetNameInput]           = useState('');       
 
-  const [masterInputText, setMasterInputText] = useState('');
-  const [isMasterFocused, setIsMasterFocused] = useState(false);
+  const [masterInputText, setMasterInputText]           = useState('');
+  const [isMasterFocused, setIsMasterFocused]           = useState(false);
 
-  const printRef = useRef();         
-  const fileInputRef = useRef(null); 
-  const excelDataInputRef = useRef(null); 
+  const [openExcelSheetDialog, setOpenExcelSheetDialog] = useState(false);
+  const [excelSheetNames, setExcelSheetNames]           = useState([]);
+  const excelWorkbookRef                                = useRef(null);
+
+  const printRef                                        = useRef();          
+  const fileInputRef                                    = useRef(null); 
+  const excelDataInputRef                               = useRef(null); 
 
   // =========================================================================
   // 로직 영역 (Data Formatting & Event Handlers)
   // =========================================================================
 
-  /**
-   * KST(한국 표준시) 기준으로 현재 시간을 포맷에 맞게 문자열로 반환
-   */
   const getKstFormattedDate = (format) => {
     if (!format) return '';
     const now = new Date();
@@ -158,26 +154,39 @@ const LabelPrintPage = () => {
       .replace(/ss/g, pad(kst.getUTCSeconds()));
   };
 
-  /**
-   * 마스터 데이터 취합 시 'date' 요소 및 '유령 표 셀'은 
-   * 무조건 제외하고 순수 'data' 필드만 추적하여 결합합니다.
-   */
+  // ★ [핵심 UX 개선] 템플릿 내에 '스캔 연동(조합)'으로 설정된 가변 데이터 필드가 있는지 확인
+  const hasCombinedDataField = useMemo(() => {
+    let found = false;
+    templateItems.forEach(item => {
+      if ((item.type === 'data' || item.type === 'date') && item.useInCode !== false) {
+        found = true;
+      } else if (item.type === 'table' && item.cells) {
+        const hiddenCells = getHiddenCells(item);
+        item.cells.forEach(cell => {
+          if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
+          if ((cell.cellType === 'data' || cell.cellType === 'date') && cell.useInCode !== false) {
+            found = true;
+          }
+        });
+      }
+    });
+    return found;
+  }, [templateItems]);
+
   const combinedMasterData = useMemo(() => {
     const parts = [];
     let hasAnyContent = false;
 
     templateItems.forEach(item => {
-      if (item.type === 'data') {
+      if (item.type === 'data' && item.useInCode !== false) {
         const val = dynamicData[item.id] || '';
         if (val !== '') hasAnyContent = true;
         parts.push(val);
       } else if (item.type === 'table' && item.cells) {
-        // 표 병합 시 가려진 유령 셀들을 가져와서 취합 과정에서 필터링합니다.
         const hiddenCells = getHiddenCells(item);
         item.cells.forEach(cell => {
-          if (hiddenCells.has(`${cell.row}_${cell.col}`)) return; // 가려졌으면 무시
-
-          if (cell.cellType === 'data') {
+          if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
+          if (cell.cellType === 'data' && cell.useInCode !== false) {
             const val = dynamicData[`${item.id}_${cell.row}_${cell.col}`] || '';
             if (val !== '') hasAnyContent = true;
             parts.push(val);
@@ -188,7 +197,6 @@ const LabelPrintPage = () => {
 
     if (!hasAnyContent) return '';
     
-    // 후행 빈 문자열 제거
     let lastNonEmpty = -1;
     for (let idx = parts.length - 1; idx >= 0; idx--) {
       if (parts[idx] !== '') {
@@ -201,16 +209,12 @@ const LabelPrintPage = () => {
     return activeParts.join(layout.delimiter || '');
   }, [templateItems, dynamicData, layout.delimiter]);
 
-  // 마스터 텍스트 필드가 포커스를 잃었을 때만 동기화 처리 (입력 튕김 방지)
   useEffect(() => {
     if (!isMasterFocused) {
       setMasterInputText(combinedMasterData);
     }
   }, [combinedMasterData, isMasterFocused]);
 
-  /**
-   * 개별 데이터 입력 필드의 변경 사항을 적용합니다.
-   */
   const handleDynamicDataChange = (id, value) => { 
     setDynamicData((prev) => ({ 
       ...prev, 
@@ -225,10 +229,6 @@ const LabelPrintPage = () => {
     }
   };
 
-  /**
-   * 마스터 창에서 일괄 입력 시 각 데이터 셀로 값을 쪼개어 분배합니다.
-   * (이때 표의 유령 셀은 카운팅에서 제외하여 값이 밀리지 않도록 합니다)
-   */
   const handleMasterDataChange = (e) => {
     const newValue = e.target.value;
     setMasterInputText(newValue); 
@@ -237,12 +237,12 @@ const LabelPrintPage = () => {
     
     let totalFields = 0;
     templateItems.forEach(i => {
-      if (i.type === 'data') {
+      if (i.type === 'data' && i.useInCode !== false) {
         totalFields++;
       } else if (i.type === 'table' && i.cells) {
         const hiddenCells = getHiddenCells(i);
         i.cells.forEach(c => {
-          if (!hiddenCells.has(`${c.row}_${c.col}`) && c.cellType === 'data') {
+          if (!hiddenCells.has(`${c.row}_${c.col}`) && c.cellType === 'data' && c.useInCode !== false) {
             totalFields++;
           }
         });
@@ -266,14 +266,14 @@ const LabelPrintPage = () => {
     const newDynamicData = { ...dynamicData };
 
     templateItems.forEach((item) => {
-      if (item.type === 'data') {
+      if (item.type === 'data' && item.useInCode !== false) {
         newDynamicData[item.id] = parts[partIdx] !== undefined ? parts[partIdx] : '';
         partIdx++;
       } else if (item.type === 'table' && item.cells) {
         const hiddenCells = getHiddenCells(item);
         item.cells.forEach(cell => {
-          if (hiddenCells.has(`${cell.row}_${cell.col}`)) return; // 가려진 셀에 데이터 분배 금지
-          if (cell.cellType === 'data') {
+          if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
+          if (cell.cellType === 'data' && cell.useInCode !== false) {
             newDynamicData[`${item.id}_${cell.row}_${cell.col}`] = parts[partIdx] !== undefined ? parts[partIdx] : '';
             partIdx++;
           }
@@ -291,9 +291,6 @@ const LabelPrintPage = () => {
     }
   };
 
-  /**
-   * 라벨 규격 및 배치 속성을 적용합니다.
-   */
   const handleLayoutChange = (e) => {
     const { name, value } = e.target;
     setLayout((prev) => ({ 
@@ -302,9 +299,6 @@ const LabelPrintPage = () => {
     }));
   };
   
-  /**
-   * 입력 필드 포커스 해제 시 최소값을 강제로 보정합니다.
-   */
   const handleLayoutBlur = (e) => {
     const { name, value } = e.target;
     let val = parseFloat(value);
@@ -323,26 +317,23 @@ const LabelPrintPage = () => {
     }));
   };
 
-  /**
-   * 엑셀 매핑용 타겟 항목을 추출합니다. (유령 셀 제외)
-   */
   const getMappingTargets = useCallback(() => {
     const targets = [];
     templateItems.forEach(item => {
-      if (item.type === 'data') {
+      if (['data', 'barcode', 'qrcode'].includes(item.type)) {
         targets.push({ 
           id:      item.id, 
-          name:    item.label || '데이터 개체', 
+          name:    item.label || (item.type === 'data' ? '데이터 개체' : '바코드/QR'), 
           isTable: false 
         });
       } else if (item.type === 'table' && item.cells) {
         const hiddenCells = getHiddenCells(item);
         item.cells.forEach(cell => {
           if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
-          if (cell.cellType === 'data') {
+          if (['data', 'barcode', 'qrcode'].includes(cell.cellType)) {
             targets.push({ 
               id:      `${item.id}_${cell.row}_${cell.col}`, 
-              name:    `표 셀: ${cell.dataId || 'DATA'}`, 
+              name:    `표 셀: ${cell.dataId || cell.cellType.toUpperCase()}`, 
               isTable: true 
             });
           }
@@ -369,9 +360,6 @@ const LabelPrintPage = () => {
     }
   };
 
-  /**
-   * 엑셀 파일 로드 및 데이터 파싱
-   */
   const handleExcelDataImport = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -380,36 +368,89 @@ const LabelPrintPage = () => {
     reader.onload = (event) => {
       try {
         const data = new Uint8Array(event.target.result);
-        const workbook = XLSX.read(data, { type: 'array' });
-        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-        const jsonData = XLSX.utils.sheet_to_json(worksheet, { defval: '' });
         
-        if (jsonData.length > 0) {
-          const headers = Object.keys(jsonData[0]);
-          setExcelColumns(headers);
-          setExcelDataList(jsonData); 
-          
-          const newData = { ...dynamicData };
-          if (layout.excelMapping) {
-            Object.keys(layout.excelMapping).forEach(tid => {
-              const col = layout.excelMapping[tid];
-              if (jsonData[0][col] !== undefined) {
-                newData[tid] = String(jsonData[0][col]);
-              }
-            });
-          }
-          setDynamicData(newData);
-          setOpenMappingDialog(true);
-          showAlert("연동 성공", "success", `총 ${jsonData.length}줄의 엑셀 데이터를 불러왔습니다.`);
+        // 글로벌 서식 테이블 1차 패치
+        XLSX.SSF.load_table({ 14: 'yyyy-mm-dd' });
+        
+        const workbook = XLSX.read(data, { 
+          type: 'array'
+        });
+        
+        if (workbook.SheetNames.length === 0) {
+          return showAlert("오류", "error", "시트가 존재하지 않는 엑셀 파일입니다.");
+        }
+
+        if (workbook.SheetNames.length > 1) {
+          excelWorkbookRef.current = workbook;
+          setExcelSheetNames(workbook.SheetNames);
+          setOpenExcelSheetDialog(true);
         } else {
-          showAlert("오류", "error", "엑셀 파일에 데이터가 없습니다.");
+          processExcelData(workbook, workbook.SheetNames[0]);
         }
       } catch (err) {
-        showAlert("오류", "error", "엑셀/CSV 데이터 연동 처리 중 오류가 발생했습니다.");
+        showAlert("오류", "error", "엑셀 파일을 읽는 중 오류가 발생했습니다.");
       }
     };
     reader.readAsArrayBuffer(file);
     excelDataInputRef.current.value = null; 
+  };
+
+  const processExcelData = (workbook, sheetName) => {
+    try {
+      if (!workbook) {
+        setOpenExcelSheetDialog(false);
+        return showAlert("오류", "error", "엑셀 데이터가 유실되었습니다. 다시 업로드 해주세요.");
+      }
+
+      const worksheet = workbook.Sheets[sheetName];
+      
+      // SheetJS가 엑셀의 수식(=) 참조를 읽고 미국식(m/d/yy) 텍스트로 오해한 부분 감지 후 교정
+      Object.keys(worksheet).forEach((cellAddress) => {
+        if (cellAddress.startsWith('!')) return;
+        
+        const cell = worksheet[cellAddress];
+        
+        if (cell && cell.t === 'n' && typeof cell.w === 'string') {
+          const textStr = cell.w.trim();
+          if (/^\d{1,2}\/\d{1,2}\/\d{2,4}$/.test(textStr) || /^\d{1,2}-\d{1,2}-\d{2,4}$/.test(textStr)) {
+            cell.z = 'yyyy-mm-dd';
+            delete cell.w; 
+          }
+        }
+      });
+      
+      // 엑셀 화면에 표기된 텍스트를 최우선으로 그대로 추출
+      const jsonData  = XLSX.utils.sheet_to_json(worksheet, { 
+        defval: '',
+        raw:    false
+      });
+      
+      if (jsonData.length > 0) {
+        const headers = Object.keys(jsonData[0]);
+        setExcelColumns(headers);
+        setExcelDataList(jsonData); 
+        
+        const newData = { ...dynamicData };
+        if (layout.excelMapping) {
+          Object.keys(layout.excelMapping).forEach(tid => {
+            const col = layout.excelMapping[tid];
+            if (jsonData[0][col] !== undefined) {
+              newData[tid] = String(jsonData[0][col]);
+            }
+          });
+        }
+        setDynamicData(newData);
+        setOpenMappingDialog(true);
+        showAlert("연동 성공", "success", `[${sheetName}] 시트에서 총 ${jsonData.length}줄의 데이터를 불러왔습니다.`);
+      } else {
+        showAlert("안내", "warning", "선택한 시트에 유효한 데이터가 없습니다.");
+      }
+    } catch (err) {
+      showAlert("오류", "error", "엑셀 데이터 파싱 중 오류가 발생했습니다.");
+    } finally {
+      setOpenExcelSheetDialog(false);
+      excelWorkbookRef.current = null;
+    }
   };
 
   const handleConfirmMapping = () => {
@@ -497,45 +538,60 @@ const LabelPrintPage = () => {
       const combinedParts = [];
       let hasAnyContent = false;
       const dynamicDataForDB = {};
+      
+      let directBarcodeValue = null; 
 
       templateItems.forEach((item) => {
-        if (item.type === 'data' || item.type === 'date') {
+        if (['barcode', 'qrcode'].includes(item.type)) {
+          if (dataItem[item.id]) {
+            directBarcodeValue = dataItem[item.id];
+          }
+        }
+
+        if ((item.type === 'data' || item.type === 'date') && item.useInCode !== false) {
           let val = item.type === 'date' 
             ? getFormattedDateString(item.content) 
             : (dataItem[item.id] || '');
           
           if (val !== '') hasAnyContent = true;
           combinedParts.push(`${item.prefix || ''}${val}${item.suffix || ''}`);
-          
-          if (item.type === 'data') {
-            dynamicDataForDB[item.label] = dataItem[item.id] || '';
-          }
+        }
+        
+        if (item.type === 'data') {
+          dynamicDataForDB[item.label] = dataItem[item.id] || '';
         } else if (item.type === 'table' && item.cells) {
-          const hiddenCells = getHiddenCells(item); // ★ 서버 전송용 DB 데이터에도 유령셀 무시
+          const hiddenCells = getHiddenCells(item); 
           item.cells.forEach(cell => {
             if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
 
-            if (cell.cellType === 'data' || cell.cellType === 'date') {
+            if (['barcode', 'qrcode'].includes(cell.cellType)) {
+              const cellId = `${item.id}_${cell.row}_${cell.col}`;
+              if (dataItem[cellId]) {
+                directBarcodeValue = dataItem[cellId];
+              }
+            }
+
+            if ((cell.cellType === 'data' || cell.cellType === 'date') && cell.useInCode !== false) {
               let val = cell.cellType === 'date' 
                 ? getFormattedDateString(cell.content || 'YYYY-MM-DD') 
                 : (dataItem[`${item.id}_${cell.row}_${cell.col}`] || '');
               
               if (val !== '') hasAnyContent = true;
               combinedParts.push(`${cell.prefix || ''}${val}${cell.suffix || ''}`);
-              
-              if (cell.cellType === 'data') {
-                const label = cell.dataId || `표 셀(${cell.row + 1},${cell.col + 1})`;
-                dynamicDataForDB[label] = dataItem[`${item.id}_${cell.row}_${cell.col}`] || '';
-              }
+            }
+
+            if (cell.cellType === 'data') {
+              const label = cell.dataId || `표 셀(${cell.row + 1},${cell.col + 1})`;
+              dynamicDataForDB[label] = dataItem[`${item.id}_${cell.row}_${cell.col}`] || '';
             }
           });
         }
       });
 
-      const combinedValue = hasAnyContent ? combinedParts.join(layout.delimiter || '') : '';
+      const finalBarcodeValue = directBarcodeValue || (hasAnyContent ? combinedParts.join(layout.delimiter || '') : 'NO_DATA');
 
       return { 
-        barcode:   combinedValue || 'NO_DATA', 
+        barcode:   finalBarcodeValue, 
         scannedAt: kstDate,
         ...dynamicDataForDB 
       };
@@ -614,14 +670,14 @@ const LabelPrintPage = () => {
     } else {
       const initialData = {}; 
       extractedItems.forEach((item) => {
-        if (item.type === 'data') {
-          initialData[item.id] = '';
+        if (['data', 'barcode', 'qrcode'].includes(item.type)) {
+          initialData[item.id] = item.content || item.dataId || '';
         } else if (item.type === 'table' && item.cells) {
-          const hiddenCells = getHiddenCells(item); // ★ 초기 데이터 세팅 시 유령셀 무시
+          const hiddenCells = getHiddenCells(item);
           item.cells.forEach(cell => {
             if (hiddenCells.has(`${cell.row}_${cell.col}`)) return;
-            if (cell.cellType === 'data') {
-              initialData[`${item.id}_${cell.row}_${cell.col}`] = '';
+            if (['data', 'barcode', 'qrcode'].includes(cell.cellType)) {
+              initialData[`${item.id}_${cell.row}_${cell.col}`] = cell.content || cell.dataId || '';
             }
           });
         }
@@ -865,7 +921,7 @@ const LabelPrintPage = () => {
                 fontWeight="bold" 
                 color="primary"
               >
-                1. 가변 데이터 입력 {mappedDataList.length > 0 && <span style={{color:'red'}}>(대량 모드)</span>}
+                1. 데이터 입력 {mappedDataList.length > 0 && <span style={{color:'red'}}>(대량 모드)</span>}
               </Typography>
               <Button 
                 size="small" 
@@ -884,73 +940,118 @@ const LabelPrintPage = () => {
               />
             </Stack>
             
-            {templateItems.filter((item) => item.type === 'data' || item.type === 'table').length === 0 ? (
+            {templateItems.filter((item) => ['data', 'barcode', 'qrcode', 'table'].includes(item.type)).length === 0 ? (
                <Typography 
                  variant="body2" 
                  color="text.secondary"
                >
-                 가변 데이터 항목이 없는 양식입니다.
+                 가변 데이터 또는 바코드 항목이 없는 양식입니다.
                </Typography>
             ) : (
               <Stack spacing={1.5}>
-                <Paper 
-                  variant="outlined" 
-                  sx={{ 
-                    p:               1.5, 
-                    mb:              1, 
-                    backgroundColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(56, 189, 248, 0.1)' : 'rgba(2, 136, 209, 0.08)', 
-                    borderColor:     (theme) => theme.palette.mode === 'dark' ? '#38bdf8' : 'info.main' 
-                  }}
-                >
-                  <Typography 
-                    variant="caption" 
-                    fontWeight="bold" 
-                    color={(theme) => theme.palette.mode === 'dark' ? '#38bdf8' : 'info.main'} 
-                    display="block" 
-                    mb={1}
-                  >
-                    💡 일괄 데이터 입력 (양방향 스캔 동기화)
-                  </Typography>
-                  <TextField 
-                    label="바코드 스캔 데이터 등 일괄 입력" 
-                    size="small" 
-                    fullWidth 
-                    multiline 
-                    minRows={2} 
-                    value={masterInputText} 
-                    onChange={handleMasterDataChange} 
-                    onFocus={() => setIsMasterFocused(true)}
-                    onBlur={() => setIsMasterFocused(false)}
-                    helperText={`구분자 '${layout.delimiter || '없음'}' 기준으로 아래 필드에 분배됩니다.`} 
-                  />
-                </Paper>
+                
+                {/* ★ [UX 개선] 조합 필드가 있을 때만 마스터(일괄) 입력창 렌더링 */}
+                {hasCombinedDataField && (
+                  <>
+                    <Paper 
+                      variant="outlined" 
+                      sx={{ 
+                        p:               1.5, 
+                        mb:              1, 
+                        backgroundColor: (theme) => theme.palette.mode === 'dark' ? 'rgba(56, 189, 248, 0.1)' : 'rgba(2, 136, 209, 0.08)', 
+                        borderColor:     (theme) => theme.palette.mode === 'dark' ? '#38bdf8' : 'info.main' 
+                      }}
+                    >
+                      <Typography 
+                        variant="caption" 
+                        fontWeight="bold" 
+                        color={(theme) => theme.palette.mode === 'dark' ? '#38bdf8' : 'info.main'} 
+                        display="block" 
+                        mb={1}
+                      >
+                        💡 일괄 데이터 입력 (양방향 스캔 동기화)
+                      </Typography>
+                      <TextField 
+                        label="바코드 스캔 데이터 등 일괄 입력" 
+                        size="small" 
+                        fullWidth 
+                        multiline 
+                        minRows={2} 
+                        disabled={mappedDataList.length > 0} 
+                        value={mappedDataList.length > 0 ? '엑셀 연동중입니다. 개별 수정이 불가능합니다.' : masterInputText} 
+                        onChange={handleMasterDataChange} 
+                        onFocus={() => setIsMasterFocused(true)}
+                        onBlur={() => setIsMasterFocused(false)}
+                        helperText={mappedDataList.length > 0 ? '' : `구분자 '${layout.delimiter || '없음'}' 기준으로 아래 필드에 분배됩니다.`} 
+                        InputProps={{
+                          readOnly: mappedDataList.length > 0
+                        }}
+                        sx={{
+                          backgroundColor: mappedDataList.length > 0 ? 'action.disabledBackground' : 'transparent'
+                        }}
+                      />
+                    </Paper>
+                    <Divider sx={{ mb: 1 }} />
+                  </>
+                )}
 
-                <Divider sx={{ mb: 1 }} />
+                {/* 개별 입력 필드들 렌더링 */}
+                {templateItems.filter((item) => ['data', 'barcode', 'qrcode'].includes(item.type)).map((item) => {
+                  
+                  // ★ [UX 개선] 마스터 조합 모드가 활성화된 상태라면 바코드/QR 개별 필드는 혼란을 방지하기 위해 숨김
+                  if (['barcode', 'qrcode'].includes(item.type) && hasCombinedDataField) return null;
 
-                {templateItems.filter((item) => item.type === 'data').map((item) => (
-                  <TextField 
-                    key={item.id} 
-                    label={item.label} 
-                    fullWidth 
-                    size="small" 
-                    value={dynamicData[item.id] || ''} 
-                    onChange={(e) => handleDynamicDataChange(item.id, e.target.value)} 
-                  />
-                ))}
-                {/* ★ 버그 픽스: 표 내부 데이터 입력창 렌더링 시에도 가려진 유령 셀(hiddenCells) 무시 */}
-                {templateItems.filter((item) => item.type === 'table').map((table) => {
-                  const hiddenCells = getHiddenCells(table);
-                  return table.cells?.filter(c => c.cellType === 'data' && !hiddenCells.has(`${c.row}_${c.col}`)).map((cell) => (
+                  return (
                     <TextField 
-                      key={`${table.id}_${cell.row}_${cell.col}`} 
-                      label={`표 셀: ${cell.dataId || '데이터'}`} 
+                      key={item.id} 
+                      label={`${item.label} ${item.type !== 'data' ? '(다이렉트 매핑)' : ''}`} 
                       fullWidth 
                       size="small" 
-                      value={dynamicData[`${table.id}_${cell.row}_${cell.col}`] || ''} 
-                      onChange={(e) => handleDynamicDataChange(`${table.id}_${cell.row}_${cell.col}`, e.target.value)} 
-                      sx={{ backgroundColor: 'action.hover' }} 
+                      disabled={mappedDataList.length > 0}
+                      value={dynamicData[item.id] || ''} 
+                      onChange={(e) => handleDynamicDataChange(item.id, e.target.value)} 
+                      InputLabelProps={{
+                        style: { color: item.type !== 'data' ? '#e91e63' : undefined }
+                      }}
+                      InputProps={{
+                        readOnly: mappedDataList.length > 0
+                      }}
+                      sx={{
+                        backgroundColor: mappedDataList.length > 0 ? 'action.disabledBackground' : 'transparent'
+                      }}
                     />
-                  ));
+                  );
+                })}
+                
+                {/* 표 내부 셀 개별 필드 렌더링 */}
+                {templateItems.filter((item) => item.type === 'table').map((table) => {
+                  const hiddenCells = getHiddenCells(table);
+                  return table.cells?.filter(c => ['data', 'barcode', 'qrcode'].includes(c.cellType) && !hiddenCells.has(`${c.row}_${c.col}`)).map((cell) => {
+                    
+                    // ★ [UX 개선] 마스터 조합 모드가 활성화된 상태라면 바코드/QR 개별 필드는 혼란을 방지하기 위해 숨김
+                    if (['barcode', 'qrcode'].includes(cell.cellType) && hasCombinedDataField) return null;
+
+                    return (
+                      <TextField 
+                        key={`${table.id}_${cell.row}_${cell.col}`} 
+                        label={`표 셀: ${cell.dataId || cell.cellType.toUpperCase()}`} 
+                        fullWidth 
+                        size="small" 
+                        disabled={mappedDataList.length > 0}
+                        value={dynamicData[`${table.id}_${cell.row}_${cell.col}`] || ''} 
+                        onChange={(e) => handleDynamicDataChange(`${table.id}_${cell.row}_${cell.col}`, e.target.value)} 
+                        InputLabelProps={{
+                          style: { color: cell.cellType !== 'data' ? '#e91e63' : undefined }
+                        }}
+                        InputProps={{
+                          readOnly: mappedDataList.length > 0
+                        }}
+                        sx={{ 
+                          backgroundColor: mappedDataList.length > 0 ? 'action.disabledBackground' : 'action.hover' 
+                        }} 
+                      />
+                    );
+                  });
                 })}
               </Stack>
             )}
@@ -1504,6 +1605,56 @@ const LabelPrintPage = () => {
           <Button onClick={() => setSavePresetDialogOpen(false)}>취소</Button>
         </DialogActions>
       </Dialog>
+
+      {/* ★ 모달: 멀티 시트 선택 */}
+      <Dialog 
+        open={openExcelSheetDialog} 
+        onClose={() => setOpenExcelSheetDialog(false)} 
+        fullWidth 
+        maxWidth="xs"
+      >
+        <DialogTitle 
+          sx={{ 
+            m:              0, 
+            p:              2, 
+            display:        'flex', 
+            justifyContent: 'space-between', 
+            alignItems:     'center' 
+          }}
+        >
+          데이터를 연동할 엑셀 시트 선택
+          <IconButton 
+            onClick={() => setOpenExcelSheetDialog(false)} 
+            size="small"
+          >
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        
+        <DialogContent dividers>
+          <List>
+            {excelSheetNames?.map((sheetName, idx) => (
+              <ListItem 
+                key={idx} 
+                disablePadding
+              >
+                <ListItemButton 
+                  onClick={() => processExcelData(excelWorkbookRef.current, sheetName)}
+                >
+                  <ListItemIcon>
+                    <TableViewIcon color="primary" />
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary={sheetName} 
+                    secondary={`시트 인덱스: ${idx + 1}`} 
+                  />
+                </ListItemButton>
+              </ListItem>
+            ))}
+          </List>
+        </DialogContent>
+      </Dialog>
+
     </Box>
   );
 };

@@ -1,9 +1,6 @@
 /**
  * @file        DesignLayerList.jsx
  * @description 라벨 디자인 페이지의 우측 하단 레이어 목록(Reorder) 패널 컴포넌트
- * - [포맷팅] 프로젝트 규칙에 따른 JSX 속성 및 Object 내부 수직 정렬 완벽 적용
- * - [기능] framer-motion을 이용한 레이어 Z-Index 순서 드래그 앤 드롭 변경
- * - [기능] 표(Table) 개체 하위에 종속된 개별 셀(Cell) 레이어 트리 뷰 및 가시성 제어 지원
  */
 
 import React from 'react';

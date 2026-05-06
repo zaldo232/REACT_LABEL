@@ -1,7 +1,6 @@
 /**
  * @file        BarcodeScanHistoryPage.jsx
  * @description 하드웨어 스캐너를 통해 서버에 저장된 원본 바코드 및 파싱 데이터 이력 조회 페이지
- * - [수정] 양식 로드 시 표(Table) 내부에 있는 가변 데이터 필드도 렌더링 컬럼에 포함되도록 파싱 로직 확장
  */
 
 import React, { 
