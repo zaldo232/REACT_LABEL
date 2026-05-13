@@ -1,7 +1,6 @@
 /**
  * @file        DataTable.jsx
  * @description 애플리케이션 전역에서 사용되는 공통 데이터 그리드 컴포넌트
- * (페이징, 로딩 상태를 관리하며 테마 설정에 연동되어 라이트/다크 모드를 완벽히 지원합니다.)
  */
 
 import React from 'react';

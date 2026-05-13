@@ -119,7 +119,7 @@ const LabelPrintHistoryPage = () => {
             'scannedAt'
           ];
           
-          // ★ 표 데이터까지 파싱되어 병합된 키 값을 동적 컬럼으로 자동 생성
+          // 표 데이터까지 파싱되어 병합된 키 값을 동적 컬럼으로 자동 생성
           const generatedCols = Object.keys(firstRow)
             .filter((key) => !systemFields.includes(key))
             .map((key) => ({

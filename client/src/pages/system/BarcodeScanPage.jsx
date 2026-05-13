@@ -164,7 +164,7 @@ const BarcodeScanPage = () => {
       const savedDelimiter = metaItem?.layout?.delimiter;
       setCurrentDelimiter(savedDelimiter !== undefined && savedDelimiter !== null ? savedDelimiter : '_');
 
-      // ★ Data 뿐만 아니라 Date(날짜) 객체 및 표 내부 셀까지 모두 파싱 대상으로 추출 (유령 셀 제외)
+      // Data 뿐만 아니라 Date(날짜) 객체 및 표 내부 셀까지 모두 파싱 대상으로 추출
       const dataFields = [];
       fullDesign.forEach(item => {
         if (item.type === 'data' || item.type === 'date') {
@@ -173,9 +173,9 @@ const BarcodeScanPage = () => {
             label: item.label || (item.type === 'date' ? '날짜' : '데이터') 
           });
         } else if (item.type === 'table' && item.cells) {
-          const hiddenCells = getHiddenCells(item); // ★ 표 병합으로 가려진 유령 셀 파악
+          const hiddenCells = getHiddenCells(item); // 표 병합으로 가려진 유령 셀 파악
           item.cells.forEach(cell => {
-            if (hiddenCells.has(`${cell.row}_${cell.col}`)) return; // ★ 가려진 셀은 파싱 항목에서 완벽히 제외!
+            if (hiddenCells.has(`${cell.row}_${cell.col}`)) return; // 가려진 셀은 파싱 항목에서 제외
 
             if (cell.cellType === 'data' || cell.cellType === 'date') {
               dataFields.push({ 

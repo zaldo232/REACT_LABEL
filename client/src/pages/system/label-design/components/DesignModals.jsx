@@ -36,7 +36,7 @@ const DesignModals = ({
   initItems,
   handleDeleteTemplate,
   
-  // ★ 엑셀 시트 선택 관련 Props
+  // 엑셀 시트 선택 관련 Props
   openExcelSheetDialog,
   setOpenExcelSheetDialog,
   excelSheetNames,

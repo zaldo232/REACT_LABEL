@@ -65,7 +65,7 @@ const LabelTemplate = forwardRef(({
   // 로직 영역: 날짜 포맷팅 및 가변 데이터 처리
   // =========================================================================
 
-  // ★ 이 함수는 오직 툴바에서 꺼낸 '날짜' 개체의 "시스템 현재(오늘) 날짜"를 인쇄하는 용도입니다. 엑셀 데이터는 이 코드를 거치지 않습니다.
+  // 이 함수는 오직 툴바에서 꺼낸 '날짜' 개체의 "시스템 현재(오늘) 날짜"를 인쇄하는 용도입니다. 엑셀 데이터는 이 코드를 거치지 않습니다.
   const getKstFormattedDate = (format) => {
     if (!format) return '';
     
@@ -194,7 +194,6 @@ const LabelTemplate = forwardRef(({
               style={{ 
                 transform:       `rotate(${parseFloat(item.rotate) || 0}deg)`, 
                 transformOrigin: 'center center', 
-                // ★ 핵심 수정: 텍스트 개체에 강제로 박혀있던 max-content를 걷어내고 사용자가 직접 조절한 Width 크기를 존중합니다.
                 width:           `${parseFloat(item.width) || 0}mm`, 
                 height:          `${parseFloat(item.height) || 0}mm`, 
                 minHeight:       item.type === 'line' ? '1px' : undefined,
@@ -222,7 +221,6 @@ const LabelTemplate = forwardRef(({
                       height:         '100%',
                       display:        'flex',
                       alignItems:     'center', // 세로도 기본적으로 중앙 정렬
-                      // ★ 핵심 수정: 하드코딩된 flex-start를 없애고 속성값(center/right 등)을 완벽히 반영하여 정해진 크기 박스 내에서 퍼짐 제어
                       justifyContent: justifyContentStr,
                       overflow:       'visible' 
                     }}

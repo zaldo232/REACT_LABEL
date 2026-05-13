@@ -63,9 +63,9 @@ const createAppTheme = (isDarkMode) => {
         
         design: {
           canvasBg: isDarkMode ? '#15181d' : '#b5bcc7',
-          // ★ 핵심 수정: 라벨 용지는 출력물(종이)이므로 다크모드와 무관하게 무조건 하얀색(#ffffff) 고정!
+          // 라벨 용지는 출력물(종이)이므로 다크모드와 무관하게 무조건 하얀색(#ffffff) 고정
           paper:    '#ffffff', 
-          // ★ 격자(모눈종이) 선도 하얀 종이 위에서 항상 잘 보여야 하므로 고정!
+          // 격자(모눈종이) 선도 하얀 종이 위에서 항상 잘 보여야 하므로 고정
           grid:     'rgba(0, 0, 0, 0.18)', 
           layerBg:  isDarkMode ? '#111827' : '#f8fafc',
         },

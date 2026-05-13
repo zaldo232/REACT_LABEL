@@ -42,11 +42,11 @@ const useDesignFileIO = ({
   const [openDbDialog, setOpenDbDialog]                 = useState(false);
   const [dbList, setDbList]                             = useState([]);
   
-  // ★ 멀티 시트 선택을 위한 모달 및 시트 이름 상태 (UI용)
+  // 멀티 시트 선택을 위한 모달 및 시트 이름 상태 (UI용)
   const [openExcelSheetDialog, setOpenExcelSheetDialog] = useState(false);
   const [excelSheetNames, setExcelSheetNames]           = useState([]);
   
-  // ★ 버그 해결: 렌더링을 유발하는 useState 대신, 거대한 엑셀 데이터는 useRef에 안전하게 은닉 보관
+  //  렌더링을 유발하는 useState 대신, 거대한 엑셀 데이터는 useRef에 안전하게 은닉 보관
   const excelWorkbookRef                                = useRef(null);
   const excelFileNameRef                                = useRef('');
 
@@ -114,7 +114,7 @@ const useDesignFileIO = ({
 
       const worksheet = workbook.Sheets[sheetName];
       
-      // ★ 핵심 수정: 엑셀 날짜 일련번호 변환 방지 및 화면 표시 텍스트 추출 옵션 적용
+      // 엑셀 날짜 일련번호 변환 방지 및 화면 표시 텍스트 추출 옵션 적용
       const matrix = XLSX.utils.sheet_to_json(worksheet, { 
         header: 1, 
         defval: '',

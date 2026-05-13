@@ -101,7 +101,7 @@ const DesignProperties = ({
       : null
   );
 
-  // ★ 다중 셀 선택 시: 엑셀 스타일 인접 셀 테두리 완벽 동기화 로직
+  // 다중 셀 선택 시: 엑셀 스타일 인접 셀 테두리 완벽 동기화 로직
   const applyBordersToSelectedCells = (borderUpdates) => {
     if (!targetItem || targetItem.type !== 'table') return;
     
@@ -385,7 +385,7 @@ const DesignProperties = ({
                   />
                 ) : (
                   <>
-                    {/* ★ 핵심 수정: 텍스트 개체도 W/H 속성창을 활성화하여 직접 입력 가능하게 변경 */}
+                    {/* 텍스트 개체도 W/H 속성창을 활성화하여 직접 입력 가능하게 변경 */}
                     <TextField 
                       label="너비(W)" 
                       type="number" 
@@ -577,7 +577,7 @@ const DesignProperties = ({
                 데이터 및 내용 (Content)
               </Typography>
 
-              {/* ★ 가변 데이터 필드일 때 노출되는 바코드 포함 스위치 */}
+              {/* 가변 데이터 필드일 때 노출되는 바코드 포함 스위치 */}
               {(targetItem?.type === 'data' || targetItem?.type === 'date') && (
                 <MuiPaper 
                   variant="outlined" 
@@ -783,7 +783,7 @@ const DesignProperties = ({
                      </Tooltip>
                    </Stack>
                    
-                   {/* ★ 글자 정렬 버튼 UI 추가 */}
+                   {/* 글자 정렬 버튼 UI 추가 */}
                    <Stack 
                      direction="row" 
                      spacing={1} 
@@ -1037,7 +1037,7 @@ const DesignProperties = ({
                       </Typography>
                     </Stack>
 
-                    {/* ★ 셀용 바코드 포함(useInCode) 설정 UI 추가 */}
+                    {/* 셀용 바코드 포함(useInCode) 설정 UI 추가 */}
                     {(repCell?.cellType === 'data' || repCell?.cellType === 'date') && selectedCells.length === 1 && (
                       <FormControlLabel 
                         control={
@@ -1053,7 +1053,7 @@ const DesignProperties = ({
                       />
                     )}
 
-                    {/* ★ 엑셀 표 스타일 테두리(Border) 제어 UI (다중 셀 동시 제어 지원) */}
+                    {/* 엑셀 표 스타일 테두리(Border) 제어 UI (다중 셀 동시 제어 지원) */}
                     <Typography 
                       variant="caption" 
                       fontWeight="bold" 
@@ -1166,7 +1166,7 @@ const DesignProperties = ({
                               }} 
                             />
                             
-                            {/* ★ 표(Table) 내부 개별 셀 정렬 버튼 UI 추가 */}
+                            {/* 표(Table) 내부 개별 셀 정렬 버튼 UI 추가 */}
                             <ToggleButtonGroup
                               value={repCell.textAlign || 'center'}
                               exclusive

@@ -154,7 +154,7 @@ const LabelPrintPage = () => {
       .replace(/ss/g, pad(kst.getUTCSeconds()));
   };
 
-  // ★ [핵심 UX 개선] 템플릿 내에 '스캔 연동(조합)'으로 설정된 가변 데이터 필드가 있는지 확인
+  // 템플릿 내에 '스캔 연동(조합)'으로 설정된 가변 데이터 필드가 있는지 확인
   const hasCombinedDataField = useMemo(() => {
     let found = false;
     templateItems.forEach(item => {
@@ -950,7 +950,7 @@ const LabelPrintPage = () => {
             ) : (
               <Stack spacing={1.5}>
                 
-                {/* ★ [UX 개선] 조합 필드가 있을 때만 마스터(일괄) 입력창 렌더링 */}
+                {/*조합 필드가 있을 때만 마스터(일괄) 입력창 렌더링 */}
                 {hasCombinedDataField && (
                   <>
                     <Paper 
@@ -998,7 +998,7 @@ const LabelPrintPage = () => {
                 {/* 개별 입력 필드들 렌더링 */}
                 {templateItems.filter((item) => ['data', 'barcode', 'qrcode'].includes(item.type)).map((item) => {
                   
-                  // ★ [UX 개선] 마스터 조합 모드가 활성화된 상태라면 바코드/QR 개별 필드는 혼란을 방지하기 위해 숨김
+                  // 마스터 조합 모드가 활성화된 상태라면 바코드/QR 개별 필드는 혼란을 방지하기 위해 숨김
                   if (['barcode', 'qrcode'].includes(item.type) && hasCombinedDataField) return null;
 
                   return (
@@ -1028,7 +1028,7 @@ const LabelPrintPage = () => {
                   const hiddenCells = getHiddenCells(table);
                   return table.cells?.filter(c => ['data', 'barcode', 'qrcode'].includes(c.cellType) && !hiddenCells.has(`${c.row}_${c.col}`)).map((cell) => {
                     
-                    // ★ [UX 개선] 마스터 조합 모드가 활성화된 상태라면 바코드/QR 개별 필드는 혼란을 방지하기 위해 숨김
+                    // 마스터 조합 모드가 활성화된 상태라면 바코드/QR 개별 필드는 혼란을 방지하기 위해 숨김
                     if (['barcode', 'qrcode'].includes(cell.cellType) && hasCombinedDataField) return null;
 
                     return (
@@ -1606,7 +1606,7 @@ const LabelPrintPage = () => {
         </DialogActions>
       </Dialog>
 
-      {/* ★ 모달: 멀티 시트 선택 */}
+      {/* 모달: 멀티 시트 선택 */}
       <Dialog 
         open={openExcelSheetDialog} 
         onClose={() => setOpenExcelSheetDialog(false)} 

@@ -1047,7 +1047,7 @@ const LabelDesignPage = () => {
     }), saveSnapshot);
   };
 
-  // ★ 다중 병합 시 쪼개지는 버그 수정 (Span 거리 합산 로직 추가)
+  // 다중 병합 시 쪼개지는 버그 수정 (Span 거리 합산 로직 추가)
   const handleMergeCells = () => {
     if (!targetItem || targetItem.type !== 'table' || selectedCells.length < 2) return;
 

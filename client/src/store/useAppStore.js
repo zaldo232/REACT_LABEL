@@ -21,7 +21,7 @@ const useAppStore = create(
       isDarkMode:    false,
       sidebarOpen:   true,
 
-      /** ★ [영역 분리: 하드웨어 스캐너 상태 복구] ★ */
+      /** [영역 분리: 하드웨어 스캐너 상태 복구]*/
       isScannerConnected: false,
       lastScan: { 
         barcode: '', 
@@ -60,7 +60,7 @@ const useAppStore = create(
         sidebarOpen: !state.sidebarOpen 
       })),
 
-      /** ★ [영역 분리: 하드웨어 스캐너 관련 메소드 복구] ★ */
+      /** [영역 분리: 하드웨어 스캐너 관련 메소드 복구]*/
       setScannerConnected: (status) => set({ 
         isScannerConnected: status 
       }),
@@ -75,10 +75,10 @@ const useAppStore = create(
     {
       name:    'label-app-storage',
       storage: createJSONStorage(() => localStorage),
-      /** * [영구 저장 필터링 (중요)] 
+      /** * [영구 저장 필터링] 
        * F5 새로고침 시 인증 정보(isAuth, user)와 UI 설정만 로컬스토리지에 저장합니다.
-       * ★ 스캐너 상태는 무조건 제외해야 합니다! 
-       * (브라우저를 새로고침하면 물리적인 USB 통신이 끊어지므로, 화면에서도 초기값인 false로 돌아가야 정상입니다.)
+       * 스캐너 상태는 무조건 제외
+       * (브라우저를 새로고침하면 물리적인 USB 통신이 끊어지므로, 화면에서도 초기값인 false로 돌아가야 정상)
        */
       partialize: (state) => ({ 
         isAuth:      state.isAuth,
